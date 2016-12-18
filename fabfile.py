@@ -491,4 +491,31 @@ def neighbor_discovery():
 					print "{0} is NOT neighbor".format(arp_list[i][0]) 
 	return neigh_list
 
+################################################################################
+# screen
+
+def screen_start_session(name, cmd):
+    fab.run('screen -S {} -dm {}'.format(name, cmd), pty=False)
+
+def screen_stop_session(name):
+    fab.run('screen -S {} -X quit'.format(name))
+
+def screen_list():
+    return fab.run('ls /var/run/screen/S-$(whoami)').split()
+
+@fab.task
+def screen_stop_all():
+    with fab.settings(warn_only=True):
+        fab.run('screen -wipe')
+
+    sessions = screen_list()
+    for name in sessions:
+        screen_stop_session(name)
+
+################################################################################
+# iperf
+
+@fab.task
+def iperf_start_servers(dir):
+    screen_start_session('iperf_server', 'iperf -s')
 
