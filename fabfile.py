@@ -495,7 +495,7 @@ def neighbor_discovery():
 # screen
 
 def screen_start_session(name, cmd):
-    fab.run('screen -S {} -dm {}'.format(name, cmd), pty=False)
+    fab.run('screen -S {} -dm bash -c "{}"'.format(name, cmd), pty=False)
 
 def screen_stop_session(name):
     fab.run('screen -S {} -X quit'.format(name))
@@ -515,7 +515,30 @@ def screen_stop_all():
 ################################################################################
 # iperf
 
+def get_my_ip(dev='wlan0'):
+    cmd = 'python -c \'from netifaces import *; print ifaddresses("{}")[AF_INET][0]["addr"]\''
+    return fab.run(cmd.format(dev))
+
 @fab.task
-def iperf_start_servers(dir):
+def iperf_start_servers():
     screen_start_session('iperf_server', 'iperf -s')
+
+@fab.task
+def iperf_start_clients_connected(server, out_dir):
+    my_addr = get_my_ip()
+    if my_addr == server:
+        return
+
+    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+    fab.run('mkdir -p {}'.format(host_out_dir))
+    screen_start_session('iperf_client',
+            'iperf -c {0} -t -1 -i 3 -yC | tee {1}/{0}.csv'
+            .format(server, host_out_dir))
+
+@fab.task
+def record_airtime(out_dir):
+    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+    fab.run('mkdir -p {}'.format(host_out_dir))
+
+    screen_start_session('airtime', 'python -u ~/react80211/utils/airtime.py 3 > {}/airtime.csv'.format(host_out_dir))
 
