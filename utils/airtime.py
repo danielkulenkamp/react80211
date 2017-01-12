@@ -30,10 +30,11 @@ if __name__ == '__main__':
     else:
         sleep_time = 10
 
+    active_start, _, _, xmit_start = iw_survey_dump()
     while True:
-        active_start, _, _, xmit_start = iw_survey_dump()
         time.sleep(sleep_time)
         active_end, _, _, xmit_end = iw_survey_dump()
 
         print (xmit_end - xmit_start) / (active_end - active_start)
+        active_start, xmit_start = active_end, xmit_end
 
