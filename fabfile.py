@@ -4,6 +4,8 @@ Requires Python 2.X for Fabric.
 Author: Fabrizio Giuliano
 '''
 
+from helpers.conn_matrix import ConnMatrix
+
 import os
 import os.path
 import datetime
@@ -521,24 +523,57 @@ def get_my_ip(dev='wlan0'):
 
 @fab.task
 def iperf_start_servers():
-    screen_start_session('iperf_server', 'iperf -s')
+    screen_start_session('iperf_server', 'iperf -u -s')
 
 @fab.task
-def iperf_start_clients_connected(server, out_dir):
-    my_addr = get_my_ip()
-    if my_addr == server:
-        return
-
-    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
-    fab.run('mkdir -p {}'.format(host_out_dir))
-    screen_start_session('iperf_client',
-            'iperf -c {0} -t -1 -i 3 -yC | tee {1}/{0}.csv'
-            .format(server, host_out_dir))
+def iperf_start_clients(host_out_dir, conn_matrix):
+    for server in conn_matrix.links(get_my_ip()):
+        screen_start_session('iperf_client',
+                'iperf -u -b 6000K -c {0} -t -1 -i 3 -yC | tee {1}/{0}.csv'
+                .format(server, host_out_dir))
 
 @fab.task
-def record_airtime(out_dir):
+def iperf_stop_clients():
+        screen_stop_session('iperf_client')
+
+@fab.task
+def airtime_record(host_out_dir):
+    screen_start_session('airtime',
+            'python -u ~/react80211/utils/airtime.py 3 > {}/airtime.csv'
+            .format(host_out_dir))
+
+@fab.task
+def airtime_stop():
+    screen_stop_session('airtime')
+
+################################################################################
+# exps
+
+@fab.task
+def exp_start():
+    install_python_deps()
+    network(freq=5180)
+    iperf_start_servers()
+
+@fab.task
+def exp_test(out_dir):
     host_out_dir = "{}/{}".format(out_dir, fab.env.host)
     fab.run('mkdir -p {}'.format(host_out_dir))
 
-    screen_start_session('airtime', 'python -u ~/react80211/utils/airtime.py 3 > {}/airtime.csv'.format(host_out_dir))
+    run_react(bw_req=6000, enable_react='YES')
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+
+    iperf_start_clients(host_out_dir, cm)
+    airtime_record(host_out_dir)
+
+@fab.task
+def exp_test_stop():
+    stop_react()
+    iperf_stop_clients()
+    airtime_stop()
 
