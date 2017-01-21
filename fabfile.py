@@ -539,7 +539,7 @@ def iperf_stop_clients():
 @fab.task
 def airtime_record(host_out_dir):
     screen_start_session('airtime',
-            'python -u ~/react80211/utils/airtime.py 3 > {}/airtime.csv'
+            'python -u ~/react80211/utils/airtime.py 1 > {}/airtime.csv'
             .format(host_out_dir))
 
 @fab.task
@@ -572,8 +572,26 @@ def exp_test(out_dir):
     airtime_record(host_out_dir)
 
 @fab.task
+def exp_cnert_sat(out_dir):
+    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+    fab.run('mkdir -p {}'.format(host_out_dir))
+
+    run_react(bw_req=6000, enable_react='YES')
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.5')
+    cm.add('192.168.0.5', r'192.168.0.6')
+    cm.add('192.168.0.6', r'192.168.0.7')
+    cm.add('192.168.0.7', r'192.168.0.1')
+
+    iperf_start_clients(host_out_dir, cm)
+
+@fab.task
 def exp_test_stop():
     stop_react()
     iperf_stop_clients()
-    airtime_stop()
+    #airtime_stop()
 
