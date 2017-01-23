@@ -317,7 +317,7 @@ def run_iperf_client(server, duration,iperf_port,src_rate=6000,enable_react='NO'
 @fab.parallel
 def stop_react():
 	with fab.settings(warn_only=True):
-		fab.sudo("kill -9 $(ps aux | grep -e react.py | awk '{print $2}')")
+		fab.sudo("pid=$(pgrep react.py) && kill -9 $pid")
 
 @fab.task
 @fab.parallel
@@ -500,7 +500,8 @@ def screen_start_session(name, cmd):
     fab.run('screen -S {} -dm bash -c "{}"'.format(name, cmd), pty=False)
 
 def screen_stop_session(name):
-    fab.run('screen -S {} -X quit'.format(name))
+    with fab.settings(warn_only=True):
+        fab.run('screen -S {} -X quit'.format(name))
 
 def screen_list():
     return fab.run('ls /var/run/screen/S-$(whoami)').split()
@@ -523,14 +524,14 @@ def get_my_ip(dev='wlan0'):
 
 @fab.task
 def iperf_start_servers():
-    screen_start_session('iperf_server', 'iperf -u -s')
+    screen_start_session('iperf_server', 'iperf -s -u')
 
 @fab.task
-def iperf_start_clients(host_out_dir, conn_matrix):
+def iperf_start_clients(host_out_dir, conn_matrix, rate=6000):
     for server in conn_matrix.links(get_my_ip()):
         screen_start_session('iperf_client',
-                'iperf -u -b 6000K -c {0} -t -1 -i 3 -yC | tee {1}/{0}.csv'
-                .format(server, host_out_dir))
+                'iperf -c {0} -u -b {2}K -t -1 -i 3 -yC | tee {1}/{0}.csv'
+                .format(server, host_out_dir, rate))
 
 @fab.task
 def iperf_stop_clients():
@@ -590,7 +591,26 @@ def exp_cnert_sat(out_dir):
     iperf_start_clients(host_out_dir, cm)
 
 @fab.task
-def exp_test_stop():
+def exp_cnert_noise(out_dir, rate):
+    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+    fab.run('mkdir -p {}'.format(host_out_dir))
+
+    if re.match(r'192\.168\.0\.(1|4)', get_my_ip()):
+        cm = ConnMatrix()
+        cm.add('192.168.0.1', r'192.168.0.4')
+        cm.add('192.168.0.4', r'192.168.0.1')
+
+        run_react(bw_req=6000, enable_react='YES')
+        iperf_start_clients(host_out_dir, cm)
+    elif int(rate) > 0:
+        cm = ConnMatrix()
+        cm.add('192.168.0.2', r'192.168.0.3')
+        cm.add('192.168.0.3', r'192.168.0.2')
+
+        iperf_start_clients(host_out_dir, cm, rate)
+
+@fab.task
+def exp_stop():
     stop_react()
     iperf_stop_clients()
     #airtime_stop()
