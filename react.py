@@ -11,6 +11,8 @@ import signal
 import string, random
 import glob
 
+from helpers import iw_survey_dump
+
 neigh_list = {};
 ieee80211_stats={}
 ieee80211_stats_={}
@@ -150,10 +152,15 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
 
 def update_cw(iface,i_time,enable_react,sleep_time,data_path):
 
+    active_start, _, _, xmit_start = iw_survey_dump()
     while True:
-        if 1:
-            update_cw_decision(iface,enable_react,sleep_time,data_path);
         time.sleep(sleep_time - ((time.time() - starttime) % sleep_time))
+        active_end, _, _, xmit_end = iw_survey_dump()
+
+        airtime = float(xmit_end - xmit_start) / float(active_end - active_start)
+        update_cw_decision(iface,enable_react,sleep_time,data_path, airtime);
+
+        active_start, xmit_start = active_end, xmit_end
 
 """
 Set CW
@@ -175,7 +182,7 @@ def setCW(iface,qumId,aifs,cwmin,cwmax,burst):
 """
 update CW decision based on ieee80211 stats values and virtual channel freezing estimation
 """
-def update_cw_decision(iface,enable_react,sleep_time,data_path):
+def update_cw_decision(iface,enable_react,sleep_time,data_path, airtime):
     #get stats
     global my_mac
     global cw
@@ -184,91 +191,30 @@ def update_cw_decision(iface,enable_react,sleep_time,data_path):
     global rts_count_
     CWMIN=15
     CWMAX=2047
-    pkt_stats=get_ieee80211_stats(iface,sleep_time)
-    pkt_size=1534
-    if pkt_stats:
-        #if rts_count_ == 0 and data_count_ == 0:
-        #   data_count = pkt_stats['dot11RTSSuccessCount'] - data_count_
-        #   rts_count = pkt_stats['dot11RTSSuccessCount'] + pkt_stats['dot11RTSFailureCount'] - rts_count_
-        #   data_count_=pkt_stats['dot11RTSSuccessCount']
-        #   rts_count_=pkt_stats['dot11RTSSuccessCount'] + pkt_stats['dot11RTSFailureCount']
-        #   return
-        data_count = pkt_stats['dot11RTSSuccessCount'] - data_count_
-        rts_count = pkt_stats['dot11RTSSuccessCount'] + pkt_stats['dot11RTSFailureCount'] - rts_count_
-        data_count_=pkt_stats['dot11RTSSuccessCount']
-        rts_count_=pkt_stats['dot11RTSSuccessCount'] + pkt_stats['dot11RTSFailureCount']
-        tx_goal=0
-        I=0
-        dd = sleep_time;
-        gross_rate = float(CLAIM_CAPACITY)*float(neigh_list[my_mac]['claim']);
 
-        [tslot, tx_time_theor, t_rts, t_ack]= txtime_theor('11a',6,20,pkt_size)
-        busytx2 =  0.002198*float(data_count) + 0.000081*float(rts_count); #how much time the station spent in tx state during the last observation internval
-#       busytx2 =  0.002071*float(data_count) + 0.000046*float(rts_count); #how much time the station spent in tx state during the last observation internval
-        SIFS=16 #usec
-        tslot=9e-6 #usec
-        #freeze2 = dd - busytx2 - cw_/float(2)*tslot*rts_count - 2*SIFS*1e-6; #how long the backoff has been frozen;
-        freeze2 = float(dd) - float(busytx2) - cw_/float(2)*float(tslot)*rts_count; #how long the backoff has been frozen;
-        if rts_count > 0:
-            avg_tx = float(busytx2)/float(rts_count); #average transmission time in a transmittion cycle
-            psucc = float(data_count)/float(rts_count);
-        else:
-            avg_tx=0
-            psucc=0
+    alloc = neigh_list[my_mac]['claim']
+    airtime = (xmit_end - xmit_start) / (active_end - active_start)
+    cw_ = (alloc - airtime)*10 + cw
 
-        if avg_tx > 0:
-            tx_goal = float(dd*gross_rate)/float(avg_tx);
-        else:
-            tx_goal = 0
+    # ENFORCE CW
+    qumId=1 #BE
+    aifs=2
+    cwmin=int(cw_);
+    cwmax=int(cw_);
+    burst=0
+    if enable_react:
+        setCW(iface,qumId,aifs,cwmin,cwmax,burst);
 
-        freeze_predict = float(freeze2)/float(dd-busytx2)*float(dd-dd*float(gross_rate))  ;
+    if debug:
+        print "t={} alloc={} airtime={} cw={} cw_={}".format(time.time(), alloc,
+                airtime, cw, cw_)
+    out_val = "{} {} {} {} {}".format(time.time(), alloc, airtime, cw, cw_)
+    my_ip=str(netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr'])
+    out_file="{}/{}.csv".format(data_path,my_ip);
+    with open(out_file, "a") as myfile:
+        myfile.write(out_val+"\n")
 
-
-        if tx_goal > 0:
-            cw = 2/float(0.000009) * (dd-tx_goal*avg_tx-freeze_predict)/float(tx_goal);
-
-
-        if cw < CWMIN:
-            cw_=CWMIN
-        elif cw > CWMAX:
-            cw_=CWMAX
-        else:
-            # TEST1
-            #cw_=cw
-
-
-            # TEST2 CLAIM_CAPACITY = 1; TEST3 CLAIM_CAPACITY = 0.8
-            #cw_=cw
-            #cw_= pow(2, math.ceil(math.log(cw_)/math.log(2)))-1;
-
-            #TEST 4 CLAIM_CAPACITY = 0.8 #GOOD
-            cw_=cw
-            cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
-
-            #TEST 5 CLAIM_CAPACITY = 1 #BAD!
-
-            #cw_=cw
-            #cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
-            #cw_ = (alpha * cw_ + (1-alpha) * cw );
-
-        # ENFORCE CW
-        qumId=1 #BE
-        aifs=2
-        cwmin=int(cw_);
-        cwmax=int(cw_);
-        burst=0
-        if enable_react:
-            setCW(iface,qumId,aifs,cwmin,cwmax,burst);
-            thr=(data_count)*1470*8/float(dd*1e6);
-        if debug:
-            print "t=%.4f,dd=%.4f data_count=%.4f rts_count=%.4f busytx2=%.4f(%.4f) gross_rate=%.4f,avg_tx=%.4f freeze2=%.4f freeze_predict=%.4f tx_goal=%.4f I=%.4f cw=%.4f cw_=%.4f psucc=%.4f thr=%.4f" % (time.time(),dd,data_count,rts_count,busytx2,busytx2/float(dd),gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
-        out_val="%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (time.time(),dd,data_count,rts_count,busytx2,gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
-
-        my_ip=str(netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr'])
-        out_file="{}/{}.csv".format(data_path,my_ip);
-        with open(out_file, "a") as myfile:
-            myfile.write(out_val+"\n")
-
+    cw = cw_
 
 def update_offer():
     done = False;
