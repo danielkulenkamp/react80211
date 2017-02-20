@@ -158,10 +158,10 @@ def iperf_start_servers():
     screen_start_session('iperf_server', 'iperf -s -u')
 
 @fab.task
-def iperf_start_clients(host_out_dir, conn_matrix, rate=6000):
+def iperf_start_clients(host_out_dir, conn_matrix, rate='1G'):
     for server in conn_matrix.links(get_my_ip()):
         screen_start_session('iperf_client',
-                'iperf -c {0} -u -b {2}K -t -1 -i 3 -yC | tee {1}/{0}.csv'
+                'iperf -c {0} -u -b {2} -t -1 -i 3 -yC | tee {1}/{0}.csv'
                 .format(server, host_out_dir, rate))
 
 @fab.task
@@ -188,7 +188,7 @@ def exp_start():
     iperf_start_servers()
 
 @fab.task
-def exp_test(out_dir):
+def exp_test(out_dir='~/data/test'):
     host_out_dir = "{}/{}".format(out_dir, fab.env.host)
     fab.run('mkdir -p {}'.format(host_out_dir))
 
@@ -201,7 +201,7 @@ def exp_test(out_dir):
     cm.add('192.168.0.4', r'192.168.0.1')
 
     iperf_start_clients(host_out_dir, cm)
-    airtime_record(host_out_dir)
+    #airtime_record(host_out_dir)
 
 @fab.task
 def exp_cnert_sat(out_dir):
