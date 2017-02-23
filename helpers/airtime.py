@@ -40,7 +40,10 @@ class AirtimeObserver(object):
 
         self.iw_survey_dump()
 
-        return (self.transmit - old_transmit) / (self.active - old_active)
+        if old_active != self.active:
+            return (self.transmit - old_transmit) / (self.active - old_active)
+        else:
+            return 0.0
 
 if __name__ == '__main__':
     if len(sys.argv) == 2:
