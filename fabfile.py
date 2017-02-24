@@ -192,7 +192,7 @@ def exp_test(out_dir='~/data/test'):
     host_out_dir = "{}/{}".format(out_dir, fab.env.host)
     fab.run('mkdir -p {}'.format(host_out_dir))
 
-    run_react(bw_req=6000, enable_react='YES')
+    #run_react(bw_req=6000, enable_react='YES')
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
