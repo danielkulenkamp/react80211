@@ -125,6 +125,15 @@ def run_react(bw_req=6000,enable_react='NO',data_path=data_path):
         fab.sudo('nohup {}/react.py -i wlan0 -t 0.1 -r {} {} -o {} > react.out 2> react.err < /dev/null &'.format(project_path,bw_req,react_flag,data_path), pty=False)
 
 ################################################################################
+# time
+
+@fab.task
+@fab.parallel
+def time_sync():
+    fab.sudo('service ntp stop')
+    fab.sudo('ntpdate time.nist.gov')
+
+################################################################################
 # screen
 
 def screen_start_session(name, cmd):
@@ -183,6 +192,7 @@ def airtime_stop():
 
 @fab.task
 def exp_start():
+    time_sync()
     install_python_deps()
     network(freq=5180)
     iperf_start_servers()
