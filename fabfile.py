@@ -36,7 +36,7 @@ data_path="{}/{}".format(project_path,"data")
 @fab.task
 @fab.parallel
 def install_python_deps():
-    fab.sudo("apt-get install python-scapy python-netifaces")
+    fab.sudo("apt-get install -y python-scapy python-netifaces python-numpy")
 
 @fab.task
 def set_hosts(host_file):
@@ -112,17 +112,14 @@ def network(freq=2412,host_file=''):
 @fab.parallel
 def stop_react():
     with fab.settings(warn_only=True):
-        fab.sudo("pid=$(pgrep react.py) && kill -9 $pid")
+        fab.sudo("pid=$(pgrep _react.py) && kill -9 $pid")
 
 @fab.task
 @fab.parallel
-def run_react(bw_req=6000,enable_react='NO',data_path=data_path):
-    react_flag=''
-    if enable_react=='YES':
-        react_flag='-e'
-    with fab.settings(warn_only=True):
-        stop_react();
-        fab.sudo('nohup {}/react.py -i wlan0 -t 0.1 -r {} {} -o {} > react.out 2> react.err < /dev/null &'.format(project_path,bw_req,react_flag,data_path), pty=False)
+def run_react(out_dir, enable_react='YES'):
+    stop_react();
+    fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
+        project_path, out_dir), pty=False)
 
 ################################################################################
 # time
@@ -198,11 +195,12 @@ def exp_start():
     iperf_start_servers()
 
 @fab.task
+@fab.parallel
 def exp_test(out_dir='~/data/test'):
     host_out_dir = "{}/{}".format(out_dir, fab.env.host)
     fab.run('mkdir -p {}'.format(host_out_dir))
 
-    #run_react(bw_req=6000, enable_react='YES')
+    run_react(host_out_dir)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -211,7 +209,6 @@ def exp_test(out_dir='~/data/test'):
     cm.add('192.168.0.4', r'192.168.0.1')
 
     iperf_start_clients(host_out_dir, cm)
-    #airtime_record(host_out_dir)
 
 @fab.task
 def exp_cnert_sat(out_dir):
