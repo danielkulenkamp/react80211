@@ -116,7 +116,10 @@ def stop_react():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir, enable_react='YES'):
+def run_react(out_dir=None, enable_react='YES'):
+    if out_dir is None:
+        out_dir = makeout()
+
     stop_react();
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
         project_path, out_dir), pty=False)
@@ -172,23 +175,19 @@ def iperf_start_clients(host_out_dir, conn_matrix, rate='1G'):
 
 @fab.task
 def iperf_stop_clients():
-        screen_stop_session('iperf_client')
-
-@fab.task
-def airtime_record(host_out_dir):
-    screen_start_session('airtime',
-            'python -u ~/react80211/utils/airtime.py 1 > {}/airtime.csv'
-            .format(host_out_dir))
-
-@fab.task
-def airtime_stop():
-    screen_stop_session('airtime')
+    screen_stop_session('iperf_client')
 
 ################################################################################
 # exps
 
+def makeout(out_dir='~/data/test'):
+    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+    fab.run('mkdir -p {}'.format(host_out_dir))
+    return host_out_dir
+
 @fab.task
-def exp_start():
+@fab.parallel
+def setup():
     time_sync()
     install_python_deps()
     network(freq=5180)
@@ -196,9 +195,8 @@ def exp_start():
 
 @fab.task
 @fab.parallel
-def exp_test(out_dir='~/data/test'):
-    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
-    fab.run('mkdir -p {}'.format(host_out_dir))
+def exp_test():
+    host_out_dir = makeout()
 
     run_react(host_out_dir)
 
@@ -248,8 +246,7 @@ def exp_cnert_noise(out_dir, rate):
         iperf_start_clients(host_out_dir, cm, rate)
 
 @fab.task
-def exp_stop():
+def stop_exp():
     stop_react()
     iperf_stop_clients()
-    #airtime_stop()
 
