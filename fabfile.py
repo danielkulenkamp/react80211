@@ -4,7 +4,12 @@ Requires Python 2.X for Fabric.
 Author: Fabrizio Giuliano
 '''
 
+###
+# my includes
 from helpers.conn_matrix import ConnMatrix
+
+from distutils.util import strtobool
+###
 
 import os
 import os.path
@@ -198,15 +203,32 @@ def setup():
 def exp_test():
     host_out_dir = makeout()
 
-    run_react(host_out_dir)
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
+@fab.task
+@fab.parallel
+def exp_concept(enable_react):
+    enable_react = bool(strtobool(enable_react))
+
+    subdir = 'react_on' if enable_react else 'react_off'
+    host_out_dir = makeout('~/data/concept/{}'.format(subdir))
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
-
     iperf_start_clients(host_out_dir, cm)
+
+    if enable_react:
+        run_react(host_out_dir)
+    #else:
+        # record airtime
 
 @fab.task
 def exp_cnert_sat(out_dir):
@@ -246,6 +268,7 @@ def exp_cnert_noise(out_dir, rate):
         iperf_start_clients(host_out_dir, cm, rate)
 
 @fab.task
+@fab.parallel
 def stop_exp():
     stop_react()
     iperf_stop_clients()
