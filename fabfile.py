@@ -9,6 +9,7 @@ Author: Fabrizio Giuliano
 from helpers.conn_matrix import ConnMatrix
 
 from distutils.util import strtobool
+import time
 ###
 
 import os
@@ -121,13 +122,27 @@ def stop_react():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, enable_react='YES'):
+def run_react(out_dir=None, beta=None, k=None, no_react=False):
+    args = []
+
     if out_dir is None:
         out_dir = makeout()
+    args.append('{}/react.csv'.format(out_dir))
+
+    if beta is not None:
+        args.append('-b')
+        args.append(str(beta))
+
+    if k is not None:
+        args.append('-k')
+        args.append(str(k))
+
+    if no_react:
+        args.append('-n')
 
     stop_react();
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
-        project_path, out_dir), pty=False)
+        project_path, ' '.join(args)), pty=False)
 
 ################################################################################
 # time
@@ -225,10 +240,22 @@ def exp_concept(enable_react):
     cm.add('192.168.0.4', r'192.168.0.1')
     iperf_start_clients(host_out_dir, cm)
 
-    if enable_react:
-        run_react(host_out_dir)
-    #else:
-        # record airtime
+    run_react(out_dir=host_out_dir, no_react=not(enable_react))
+
+@fab.task
+@fab.parallel
+def exp_parameters(beta, k):
+    host_out_dir = makeout('~/data/03_parameters/b{:03}_k{:03}'.format(
+        int(float(beta)*100.0), int(k)))
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
+    run_react(out_dir=host_out_dir, beta=beta, k=k)
 
 @fab.task
 def exp_cnert_sat(out_dir):
