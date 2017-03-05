@@ -3,3 +3,4 @@ backports-wireless/backports*
 fabfile.pyc
 *.csv
 *.swp
+data
