@@ -122,7 +122,7 @@ def stop_react():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, beta=None, k=None, no_react=False):
+def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None):
     args = []
 
     if out_dir is None:
@@ -139,6 +139,10 @@ def run_react(out_dir=None, beta=None, k=None, no_react=False):
 
     if no_react:
         args.append('-n')
+
+    if ct is not None:
+        args.append('-c')
+        args.append(str(ct))
 
     stop_react();
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
@@ -241,6 +245,32 @@ def exp_concept(enable_react):
     iperf_start_clients(host_out_dir, cm)
 
     run_react(out_dir=host_out_dir, no_react=not(enable_react))
+
+@fab.task
+@fab.parallel
+def exp_hilo(trial):
+    if trial == 'none':
+        no_react = True
+        ct = None
+    elif trial == 'low':
+        no_react = False
+        ct = 0
+    elif trial == 'high':
+        no_react = False
+        ct = 1023
+    else:
+        exit(1)
+
+    host_out_dir = makeout('~/data/02_hilo/{}'.format(trial))
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
+    run_react(out_dir=host_out_dir, no_react=no_react, ct=ct)
 
 @fab.task
 @fab.parallel

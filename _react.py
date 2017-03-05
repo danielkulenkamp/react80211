@@ -16,6 +16,8 @@ p.add_argument('-k', action='store', default=200.0, type=float,
         help='k-multiplier for airtime tuning')
 p.add_argument('-n', '--no_react', action='store_true',
         help="don't run REACT (but still log airtime)")
+p.add_argument('-c', '--ct_initial', action='store', default=0, type=int,
+        help='initial CT value')
 
 args = p.parse_args()
 
@@ -45,7 +47,7 @@ def set_max(cw):
 ###
 alloc = 0.20
 smooth = None
-ct = 0
+ct = args.ct_initial
 
 ao = AirtimeObserver()
 while True:
