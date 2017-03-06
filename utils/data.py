@@ -62,21 +62,20 @@ def ct(node_dir):
 
 def converge_time(node_dir, cv_threshold=0.10):
     x_list, y_list = load_react_csv_data(node_dir, 0, 4)
-    first, last = get_xlim(x_list)
+    first, _ = get_xlim(x_list)
 
-    # make all y the same length according time range
+    # all y should start at same x and be same length
     for i in xrange(len(x_list)):
         x = x_list[i]
 
         first_i = 0
         while x[first_i] < first:
             first_i += 1
+        y_list[i] = y_list[i][first_i:]
 
-        last_i = 0
-        while x[last_i] < last:
-            last_i += 1
-
-        y_list[i] = y_list[i][first_i:last_i + 1]
+    min_len = min(map(len, y_list))
+    for i in xrange(len(y_list)):
+        y_list[i] = y_list[i][:min_len]
 
     data = np.column_stack(y_list)
 
@@ -88,15 +87,10 @@ def converge_time(node_dir, cv_threshold=0.10):
             return x_list[0][i] - first
 
     # does not converge
-    return None
+    return x_list[0][-1] - first
 
 def convergence(node_dir):
     print converge_time(node_dir)
-
-def heatmap():
-    a = np.random.random((16, 16))
-    plt.imshow(a, cmap='hot', interpolation='nearest')
-    plt.show()
 
 def thr():
     i = 1
@@ -118,4 +112,3 @@ if __name__ == '__main__':
     args = p.parse_args()
 
     fn_map[args.command](args.node_dir)
-
