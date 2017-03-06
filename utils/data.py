@@ -7,7 +7,19 @@ import sys
 import argparse
 from glob import glob
 
-def set_xlim(x_list):
+def load_react_csv_data(node_dir, x_index, y_index):
+    x_list = []
+    y_list = []
+
+    paths = glob('{}/*/react.csv'.format(node_dir))
+    for i in xrange(len(paths)):
+        path = paths[i]
+        x_list.append(np.loadtxt(path, delimiter=',', usecols=(x_index,)))
+        y_list.append(np.loadtxt(path, delimiter=',', usecols=(y_index,)))
+
+    return x_list, y_list
+
+def get_xlim(x_list):
     first = x_list[0][0]
     last = x_list[0][-1]
 
@@ -18,35 +30,72 @@ def set_xlim(x_list):
         if x[-1] < last:
             last = x[-1]
 
+    return first, last
+
+def plot_react_csv_data(node_dir, y_index):
+    x_list, y_list = load_react_csv_data(node_dir, 0, y_index)
+
+    first, last = get_xlim(x_list)
     for x in x_list:
         for i in xrange(len(x)):
             x[i] = x[i] - first
-
     plt.xlim([0, last - first])
 
-def load_react_csv_data(node_dir, x_index, y_index, x_list, y_list):
-    paths = glob('{}/*/react.csv'.format(node_dir))
-    for i in xrange(len(paths)):
-        path = paths[i]
-        x_list.append(np.loadtxt(path, delimiter=',', usecols=(x_index,)))
-        y_list.append(np.loadtxt(path, delimiter=',', usecols=(y_index,)))
-
-def plot_node_data(x_list, y_list):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
 
-def airtime(node_dir)
-    x_list = []
-    y_list = []
-
-    load_react_csv_data(node_dir, 0, 2, x_list, y_list)
-    set_xlim(x_list)
-    plot_node_data(x_list, y_list)
-
+def airtime(node_dir):
+    plot_react_csv_data(node_dir, 2)
     plt.xlabel('Time')
     plt.ylabel('Airtime (%)')
-    plt.title('Airtime with REACT')
+    plt.title('Airtime vs. Time')
     plt.legend()
+    plt.show()
+
+def ct(node_dir):
+    plot_react_csv_data(node_dir, 4)
+    plt.xlabel('Time')
+    plt.ylabel('CT')
+    plt.title('Contention Time (CT) vs. Time')
+    plt.legend()
+    plt.show()
+
+def converge_time(node_dir, cv_threshold=0.10):
+    x_list, y_list = load_react_csv_data(node_dir, 0, 4)
+    first, last = get_xlim(x_list)
+
+    # make all y the same length according time range
+    for i in xrange(len(x_list)):
+        x = x_list[i]
+
+        first_i = 0
+        while x[first_i] < first:
+            first_i += 1
+
+        last_i = 0
+        while x[last_i] < last:
+            last_i += 1
+
+        y_list[i] = y_list[i][first_i:last_i + 1]
+
+    data = np.column_stack(y_list)
+
+    for i in xrange(len(data[...,0])):
+        # coefficient of variation
+        cv = data[i:].std(axis=0) / data[i:].mean(axis=0)
+
+        if (cv < cv_threshold).all():
+            return x_list[0][i] - first
+
+    # does not converge
+    return None
+
+def convergence(node_dir):
+    print converge_time(node_dir)
+
+def heatmap():
+    a = np.random.random((16, 16))
+    plt.imshow(a, cmap='hot', interpolation='nearest')
     plt.show()
 
 def thr():
@@ -59,7 +108,7 @@ def thr():
         i += 1
 
 if __name__ == '__main__':
-    fn_map = { 'airtime': airtime }
+    fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence }
 
     p = argparse.ArgumentParser()
     p.add_argument('command', choices=fn_map,
