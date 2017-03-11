@@ -5,6 +5,7 @@ from __future__ import division
 import subprocess
 import sys
 import time
+import argparse
 
 class AirtimeObserver(object):
 
@@ -46,13 +47,22 @@ class AirtimeObserver(object):
             return 0.0
 
 if __name__ == '__main__':
-    if len(sys.argv) == 2:
-        sleep_time = int(sys.argv[1])
-    else:
-        sleep_time = 1
+    p = argparse.ArgumentParser(
+            description="Measure airtime using 'iw DEV survey dump'.",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument('-d', '--dev', action='store', default='wlan0',
+            help='wireless interface')
+    p.add_argument('-t', '--sleep_time', action='store', default=1, type=int,
+            help='time (in seconds) to pause between airtime measurements')
+    p.add_argument('-o', '--once', action='store_true',
+            help="measure airtime once and exit")
 
-    ao = AirtimeObserver()
+    args = p.parse_args()
+
+    ao = AirtimeObserver(args.dev)
     while True:
-        time.sleep(sleep_time)
+        time.sleep(args.sleep_time)
         print ao.airtime()
 
+        if args.once:
+            break
