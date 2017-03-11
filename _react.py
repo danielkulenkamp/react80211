@@ -7,7 +7,8 @@ import sys
 import time
 import numpy
 
-p = argparse.ArgumentParser(description='REACT: airtime negotiation/tuning.')
+p = argparse.ArgumentParser(description='REACT: airtime negotiation/tuning.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 p.add_argument('log_file', action='store', type=argparse.FileType('w'),
         help='file to write REACT log to')
 p.add_argument('-b', '--beta', action='store', default=0.5, type=float,
@@ -18,6 +19,8 @@ p.add_argument('-n', '--no_react', action='store_true',
         help="don't run REACT (but still log airtime)")
 p.add_argument('-c', '--ct_initial', action='store', default=0, type=int,
         help='initial CT value')
+p.add_argument('-t', '--sleep_time', action='store', default=1.0, type=float,
+        help='length (in seconds) of observation interval')
 
 args = p.parse_args()
 
@@ -47,27 +50,30 @@ def set_max(cw):
 ###
 alloc = 0.20
 smooth = None
+ct_prev = -1
 ct = args.ct_initial
+
+if not(args.no_react):
+    set_ct(ct)
 
 ao = AirtimeObserver()
 while True:
-    time.sleep(1.0)
+    time.sleep(args.sleep_time)
     airtime = ao.airtime()
 
     if smooth is None:
         smooth = airtime
-    else:
-        smooth = args.beta*airtime + (1.0 - args.beta)*smooth
 
-    ct_ = ct
-    ct = int((smooth - alloc)*args.k) + ct
-    ct = 0 if ct < 0 else ct
-    ct = 1023 if ct > 1023 else ct
     if not(args.no_react):
+        smooth = args.beta*airtime + (1.0 - args.beta)*smooth
+        ct_prev = ct
+        ct = int((smooth - alloc)*args.k) + ct
+        ct = 0 if ct < 0 else ct
+        ct = 1023 if ct > 1023 else ct
         set_ct(ct)
 
     args.log_file.write('{:.0f},{:.5f},{:.5f},{:.5f},{},{}\n'.format(
-            time.time(), alloc, airtime, smooth, ct_, ct))
+            time.time(), alloc, airtime, smooth, ct_prev, ct))
     args.log_file.flush()
 
 ###

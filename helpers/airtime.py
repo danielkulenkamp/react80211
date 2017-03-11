@@ -52,7 +52,7 @@ if __name__ == '__main__':
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('-d', '--dev', action='store', default='wlan0',
             help='wireless interface')
-    p.add_argument('-t', '--sleep_time', action='store', default=1, type=int,
+    p.add_argument('-t', '--sleep_time', action='store', default=1.0, type=float,
             help='time (in seconds) to pause between airtime measurements')
     p.add_argument('-o', '--once', action='store_true',
             help="measure airtime once and exit")

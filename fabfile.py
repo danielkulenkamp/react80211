@@ -122,7 +122,8 @@ def stop_react():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None):
+def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None,
+        sleep_time=None):
     args = []
 
     if out_dir is None:
@@ -143,6 +144,10 @@ def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None):
     if ct is not None:
         args.append('-c')
         args.append(str(ct))
+
+    if sleep_time is not None:
+        args.append('-t')
+        args.append(str(sleep_time))
 
     stop_react();
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
@@ -204,8 +209,20 @@ def iperf_stop_clients():
 ################################################################################
 # exps
 
-def makeout(out_dir='~/data/test'):
-    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
+def makeout(out_dir='~/data/test', trial_dir=None):
+    subdirs = []
+
+    subdirs.append(out_dir)
+
+    today = datetime.datetime.today()
+    subdirs.append('{:02}{:02}'.format(today.month, today.day))
+
+    if trial_dir is not None:
+        subdirs.append(trial_dir)
+
+    subdirs.append(fab.env.host)
+
+    host_out_dir = '/'.join(subdirs)
     fab.run('mkdir -p {}'.format(host_out_dir))
     return host_out_dir
 
