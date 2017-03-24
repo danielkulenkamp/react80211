@@ -1,14 +1,17 @@
-CC = gcc-4.9
-KBUILD_DIR = /home/matt/linux-3.8
+KDIR ?= /lib/modules/`uname -r`/build
 
 obj-m += sch_react.o
 
 all:
-	make -C $(KBUILD_DIR) M=$(PWD) modules
+	make -C $(KDIR) M=$(CURDIR) modules
+
+install:
+	make -C $(KDIR) M=$(CURDIR) modules_install
 
 clean:
-	make -C $(KBUILD_DIR) M=$(PWD) clean
+	make -C $(KDIR) M=$(CURDIR) clean
 
 tags:
-	make -C $(KBUILD_DIR) O=$(PWD) tags
+	make -C $(KDIR) O=$(CURDIR) tags
 
+.PHONY: all install clean tags

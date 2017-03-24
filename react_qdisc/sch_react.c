@@ -37,4 +37,18 @@ struct Qdisc_ops react_qdisc_ops __read_mostly = {
 	//.dump		=	fifo_dump,
 	.owner		=	THIS_MODULE,
 };
-EXPORT_SYMBOL(react_qdisc_ops);
+
+static int __init react_module_init(void)
+{
+	return register_qdisc(&react_qdisc_ops);
+}
+
+static void __exit react_module_exit(void)
+{
+	unregister_qdisc(&react_qdisc_ops);
+}
+
+module_init(react_module_init)
+module_exit(react_module_exit)
+
+MODULE_LICENSE("GPL");
