@@ -6,40 +6,47 @@
 #include <linux/skbuff.h>
 #include <net/pkt_sched.h>
 
+struct sk_buff *skb_ctrl = NULL;
+
 static int react_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
-	/* Got more up-to-date data, empty queue */
-	while (__skb_dequeue(&sch->q));
+	if (skb_ctrl)
+		qdisc_drop(skb_ctrl, sch);
 
-	return qdisc_enqueue_tail(skb, sch);
+	skb_ctrl = skb;
+	sch->q.qlen = 1;
+
+	return NET_XMIT_SUCCESS;
 }
 
-static int react_init(struct Qdisc *sch, struct nlattr *opt)
+static struct sk_buff *react_dequeue(struct Qdisc *sch)
 {
-	/* Only keep the most up-to-date control packet */
-	sch->limit = 1;
+	struct sk_buff *tmp;
 
-	//sch->flags &= ~TCQ_F_CAN_BYPASS;
+	tmp = skb_ctrl;
+	skb_ctrl = NULL;
+	sch->q.qlen = 0;
 
-	return 0;
+	return tmp;
+}
+
+struct sk_buff *react_peek(struct Qdisc *sch)
+{
+	return skb_ctrl;
 }
 
 struct Qdisc_ops react_qdisc_ops __read_mostly = {
 	.id		=	"react",
 	.priv_size	=	0,
 	.enqueue	=	react_enqueue,
-	.dequeue	=	qdisc_dequeue_head,
-	.peek		=	qdisc_peek_head,
-	.drop		=	qdisc_queue_drop,
-	.init		=	react_init,
-	.reset		=	qdisc_reset_queue,
-	.change		=	react_init,
-	//.dump		=	fifo_dump,
+	.dequeue	=	react_dequeue,
+	.peek		=	react_peek,
 	.owner		=	THIS_MODULE,
 };
 
 static int __init react_module_init(void)
 {
+	printk("sch_react: Compiled on " __DATE__ " at %s\n", __TIME__);
 	return register_qdisc(&react_qdisc_ops);
 }
 
