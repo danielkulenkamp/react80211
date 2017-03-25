@@ -8,37 +8,45 @@
 
 struct react_data {
 	struct sk_buff *ctrl;
+	struct Qdisc *q;
 };
 
 static int react_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
 	struct react_data *dat = qdisc_priv(sch);
+	int ret;
 
-	if (dat->ctrl)
-		qdisc_drop(dat->ctrl, sch);
+	/* Marked packets are control packets */
+	if (skb->mark) {
+		if (dat->ctrl)
+			qdisc_drop(dat->ctrl, sch);
 
-	dat->ctrl = skb;
-	sch->q.qlen = 1;
+		dat->ctrl = skb;
+		sch->q.qlen++;
+		return NET_XMIT_SUCCESS;
+	}
 
-	return NET_XMIT_SUCCESS;
+	ret = qdisc_enqueue(skb, dat->q);
+	if (ret == NET_XMIT_SUCCESS)
+		sch->q.qlen++;
+	return ret;
 }
 
 static struct sk_buff *react_dequeue(struct Qdisc *sch)
 {
-	struct sk_buff *tmp;
 	struct react_data *dat = qdisc_priv(sch);
+	struct sk_buff *skb;
 
-	tmp = dat->ctrl;
-	dat->ctrl = NULL;
-	sch->q.qlen = 0;
+	/* Always send a control packet if there is one */
+	if (dat->ctrl) {
+		skb = dat->ctrl;
+		dat->ctrl = NULL;
+	} else
+		skb = dat->q->dequeue(dat->q);
 
-	return tmp;
-}
-
-struct sk_buff *react_peek(struct Qdisc *sch)
-{
-	struct react_data *dat = qdisc_priv(sch);
-	return dat->ctrl;
+	if (skb)
+		sch->q.qlen--;
+	return skb;
 }
 
 static int react_init(struct Qdisc *sch, struct nlattr *opt)
@@ -46,6 +54,11 @@ static int react_init(struct Qdisc *sch, struct nlattr *opt)
 	struct react_data *dat = qdisc_priv(sch);
 
 	dat->ctrl = NULL;
+
+	/* All packets other than control packets go in this FIFO */
+	dat->q = qdisc_create_dflt(sch->dev_queue, &pfifo_qdisc_ops, 0);
+	if (!dat->q)
+		return -ENOMEM;
 
 	return 0;
 }
@@ -55,7 +68,7 @@ struct Qdisc_ops react_qdisc_ops __read_mostly = {
 	.priv_size	=	sizeof(struct react_data),
 	.enqueue	=	react_enqueue,
 	.dequeue	=	react_dequeue,
-	.peek		=	react_peek,
+	.peek		=	qdisc_peek_dequeued,
 	.init		=	react_init,
 	.owner		=	THIS_MODULE,
 };
