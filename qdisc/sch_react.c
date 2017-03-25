@@ -6,14 +6,18 @@
 #include <linux/skbuff.h>
 #include <net/pkt_sched.h>
 
-struct sk_buff *skb_ctrl = NULL;
+struct react_data {
+	struct sk_buff *ctrl;
+};
 
 static int react_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
-	if (skb_ctrl)
-		qdisc_drop(skb_ctrl, sch);
+	struct react_data *dat = qdisc_priv(sch);
 
-	skb_ctrl = skb;
+	if (dat->ctrl)
+		qdisc_drop(dat->ctrl, sch);
+
+	dat->ctrl = skb;
 	sch->q.qlen = 1;
 
 	return NET_XMIT_SUCCESS;
@@ -22,9 +26,10 @@ static int react_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 static struct sk_buff *react_dequeue(struct Qdisc *sch)
 {
 	struct sk_buff *tmp;
+	struct react_data *dat = qdisc_priv(sch);
 
-	tmp = skb_ctrl;
-	skb_ctrl = NULL;
+	tmp = dat->ctrl;
+	dat->ctrl = NULL;
 	sch->q.qlen = 0;
 
 	return tmp;
@@ -32,15 +37,26 @@ static struct sk_buff *react_dequeue(struct Qdisc *sch)
 
 struct sk_buff *react_peek(struct Qdisc *sch)
 {
-	return skb_ctrl;
+	struct react_data *dat = qdisc_priv(sch);
+	return dat->ctrl;
+}
+
+static int react_init(struct Qdisc *sch, struct nlattr *opt)
+{
+	struct react_data *dat = qdisc_priv(sch);
+
+	dat->ctrl = NULL;
+
+	return 0;
 }
 
 struct Qdisc_ops react_qdisc_ops __read_mostly = {
 	.id		=	"react",
-	.priv_size	=	0,
+	.priv_size	=	sizeof(struct react_data),
 	.enqueue	=	react_enqueue,
 	.dequeue	=	react_dequeue,
 	.peek		=	react_peek,
+	.init		=	react_init,
 	.owner		=	THIS_MODULE,
 };
 
@@ -57,5 +73,4 @@ static void __exit react_module_exit(void)
 
 module_init(react_module_init)
 module_exit(react_module_exit)
-
 MODULE_LICENSE("GPL");
