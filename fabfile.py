@@ -252,7 +252,7 @@ def exp_concept(enable_react):
     enable_react = bool(strtobool(enable_react))
 
     subdir = 'react_on' if enable_react else 'react_off'
-    host_out_dir = makeout('~/data/concept/{}'.format(subdir))
+    host_out_dir = makeout('~/data/01_concept', subdir)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -292,7 +292,7 @@ def exp_hilo(trial):
 @fab.task
 @fab.parallel
 def exp_parameters(beta, k):
-    host_out_dir = makeout('~/data/03_parameters/b{:03}_k{:03}'.format(
+    host_out_dir = makeout('~/data/03_parameters', 'b{:03}_k{:03}'.format(
         int(float(beta)*100.0), int(k)))
 
     cm = ConnMatrix()
