@@ -343,7 +343,22 @@ def exp_cnert_noise(out_dir, rate):
 
 @fab.task
 @fab.parallel
+def exp_graph_start():
+    host_out_dir = makeout('~/data/99_graph')
+    screen_start_session('tcpdump',
+            'sudo tcpdump -Al -i wlan0 > {}/dump.txt'.format(host_out_dir))
+
+@fab.task
+def exp_graph_run():
+    fab.run('{}/bcast.py {}'.format(project_path, fab.env.host_string))
+
+@fab.task
+@fab.parallel
+def exp_graph_stop():
+    screen_stop_session('tcpdump')
+
+@fab.task
+@fab.parallel
 def stop_exp():
     stop_react()
     iperf_stop_clients()
-
