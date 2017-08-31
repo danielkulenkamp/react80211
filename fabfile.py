@@ -122,6 +122,12 @@ def stop_react():
 
 @fab.task
 @fab.parallel
+def stop_react2():
+    with fab.settings(warn_only=True):
+        fab.sudo("pid=$(pgrep react.py) && kill -9 $pid")
+
+@fab.task
+@fab.parallel
 def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None,
         sleep_time=None):
     args = []
@@ -152,6 +158,16 @@ def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None,
     stop_react();
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
         project_path, ' '.join(args)), pty=False)
+
+@fab.task
+@fab.parallel
+def run_react2(bw_req=6000,enable_react='YES',data_path=data_path):
+    react_flag=''
+    if enable_react=='YES':
+        react_flag='-e'
+    with fab.settings(warn_only=True):
+        stop_react2();
+        fab.sudo('nohup {}/react.py -i wlan0 -t 0.1 -r {} {} -o {} > react.out 2> react.err < /dev/null &'.format(project_path,bw_req,react_flag,data_path), pty=False)
 
 ################################################################################
 # time
