@@ -155,19 +155,35 @@ def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None,
         args.append('-t')
         args.append(str(sleep_time))
 
-    stop_react();
+    stop_react()
     fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
         project_path, ' '.join(args)), pty=False)
 
 @fab.task
 @fab.parallel
-def run_react2(bw_req=6000,enable_react='YES',data_path=data_path):
-    react_flag=''
-    if enable_react=='YES':
-        react_flag='-e'
-    with fab.settings(warn_only=True):
-        stop_react2();
-        fab.sudo('nohup {}/react.py -i wlan0 -t 0.1 -r {} {} -o {} > react.out 2> react.err < /dev/null &'.format(project_path,bw_req,react_flag,data_path), pty=False)
+def run_react2(out_dir=None, enable_react=True):
+    args = []
+
+    args.append('-i')
+    args.append('wlan0')
+
+    args.append('-t')
+    args.append('0.1')
+
+    args.append('-r')
+    args.append('6000')
+
+    if enable_react:
+        args.append('-e')
+
+    args.append('-o')
+    if out_dir is None:
+        out_dir = makeout()
+    args.append(out_dir)
+
+    stop_react2()
+    fab.sudo('setsid {}/react.py {} &>/dev/null </dev/null &'.format(
+        project_path, ' '.join(args)), pty=False)
 
 ################################################################################
 # time
@@ -261,6 +277,8 @@ def exp_test():
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
     iperf_start_clients(host_out_dir, cm)
+
+    run_react2(out_dir=host_out_dir)
 
 @fab.task
 @fab.parallel
@@ -377,4 +395,5 @@ def exp_graph_stop():
 @fab.parallel
 def stop_exp():
     stop_react()
+    stop_react2()
     iperf_stop_clients()
