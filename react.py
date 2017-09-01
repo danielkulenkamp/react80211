@@ -231,29 +231,13 @@ def update_cw_decision(iface,enable_react,sleep_time,data_path, airtime):
 		if tx_goal > 0:
 			cw = 2/float(0.000009) * (dd-tx_goal*avg_tx-freeze_predict)/float(tx_goal);
 
-
+		cw_prev = cw_
 		if cw < CWMIN:
 			cw_=CWMIN
 		elif cw > CWMAX:
 			cw_=CWMAX
 		else:
-			# TEST1
-			#cw_=cw
-
-
-			# TEST2	CLAIM_CAPACITY = 1; TEST3 CLAIM_CAPACITY = 0.8
-			#cw_=cw
-			#cw_= pow(2, math.ceil(math.log(cw_)/math.log(2)))-1;
-
-			#TEST 4 CLAIM_CAPACITY = 0.8 #GOOD
-			cw_=cw
-			#cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
-
-			#TEST 5 CLAIM_CAPACITY = 1 #BAD!
-
-			#cw_=cw
-			#cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
-			#cw_ = (alpha * cw_ + (1-alpha) * cw );
+			cw_=int(cw)
 
 		# ENFORCE CW
 		qumId=1 #BE
@@ -268,10 +252,12 @@ def update_cw_decision(iface,enable_react,sleep_time,data_path, airtime):
 			print "t=%.4f,dd=%.4f data_count=%.4f rts_count=%.4f busytx2=%.4f(%.4f) gross_rate=%.4f,avg_tx=%.4f freeze2=%.4f freeze_predict=%.4f tx_goal=%.4f I=%.4f cw=%.4f cw_=%.4f psucc=%.4f thr=%.4f" % (time.time(),dd,data_count,rts_count,busytx2,busytx2/float(dd),gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
 		out_val="%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (time.time(),dd,data_count,rts_count,busytx2,gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
 
-		out_file="{}/react2.csv".format(data_path)
+		out_file="{}/react.csv".format(data_path)
 		with open(out_file, "a") as myfile:
 			myfile.write('{:.0f},{:.5f},{:.5f},{:.5f},{},{}\n'.format(
-				time.time()*1000, 0.0, airtime, 0.0, 0, 0))
+				time.time()*1000,
+				float(neigh_list[my_mac]['claim']), airtime,
+				0.0, cw_prev, cw_))
 			myfile.flush()
 
 def update_offer():
@@ -440,7 +426,7 @@ def main():
 	if (not os.path.exists(data_path)):
 		print "{} does not exists, please create it".format(data_path)
 		return
-	out_file="{}/react2.csv".format(data_path)
+	out_file="{}/react.csv".format(data_path)
 	with open(out_file, "w") as myfile:
 		myfile.write("")
 		myfile.close()

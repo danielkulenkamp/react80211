@@ -278,7 +278,25 @@ def exp_test():
     cm.add('192.168.0.4', r'192.168.0.1')
     iperf_start_clients(host_out_dir, cm)
 
-    run_react2(out_dir=host_out_dir)
+@fab.task
+@fab.parallel
+def exp_rvr(use_orig):
+    use_orig = bool(strtobool(use_orig))
+
+    subdir = 'react2' if use_orig else 'react'
+    host_out_dir = makeout('~/data/00_rvr', subdir)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm, rate='6000K')
+
+    if use_orig:
+        run_react2(out_dir=host_out_dir)
+    else:
+        run_react(out_dir=host_out_dir)
 
 @fab.task
 @fab.parallel

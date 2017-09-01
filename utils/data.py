@@ -11,6 +11,7 @@ def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []
 
+    # TODO: check if this file exists
     paths = glob('{}/*/react.csv'.format(node_dir))
     for i in xrange(len(paths)):
         path = paths[i]
