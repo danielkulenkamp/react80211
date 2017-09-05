@@ -2,3 +2,4 @@ backports-wireless/athmodules/
 backports-wireless/backports*
 *.pyc
 data
+node_info.txt
