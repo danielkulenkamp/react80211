@@ -3,90 +3,95 @@
 from helpers.airtime import AirtimeObserver
 
 import argparse
-import sys
 import time
-import numpy
 
-p = argparse.ArgumentParser(description='REACT: airtime negotiation/tuning.',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-p.add_argument('log_file', action='store', type=argparse.FileType('w'),
-        help='file to write REACT log to')
-p.add_argument('-b', '--beta', action='store', default=0.5, type=float,
-        help='beta value for airtime smoothing')
-p.add_argument('-k', action='store', default=200.0, type=float,
-        help='k-multiplier for airtime tuning')
-p.add_argument('-n', '--no_react', action='store_true',
-        help="don't run REACT (but still log airtime)")
-p.add_argument('-c', '--ct_initial', action='store', default=0, type=int,
-        help='initial CT value')
-p.add_argument('-t', '--sleep_time', action='store', default=1.0, type=float,
-        help='length (in seconds) of observation interval')
+class TunerBase(object):
 
-args = p.parse_args()
+    def __init__(self, iface, log_file):
+        # TODO: implement iface --> phy translation
+        assert(iface == 'wlan0')
+        phy = 'phy0'
 
-def setCW(iface,qumId,aifs,cwmin,cwmax,burst):
-    phy='phy0'
-    f_name='/sys/kernel/debug/ieee80211/{}/ath9k/txq_params'.format(phy);
-    txq_params_msg='{} {} {} {} {}'.format(qumId,aifs,cwmin,cwmax,burst)
-    f_cw = open(f_name, 'w')
-    f_cw.write(txq_params_msg)
+        self.txq_params_fname = '/sys/kernel/debug/ieee80211/'
+        self.txq_params_fname += phy
+        self.txq_params_fname += '/ath9k/txq_params'
 
-def set_ct(ct):
-    qumId = 1 #BE
-    aifs = 2
-    cw_min = int(ct)
-    cw_max = int(ct)
-    burst = 0
-    setCW('wlan0', qumId, aifs, cw_min, cw_max, burst)
+        self.log_file = log_file
 
-def set_max(cw):
-    qumId = 1 #BE
-    aifs = 2
-    cw_min = 1
-    cw_max = int(cw)
-    burst = 0
-    setCW('wlan0', qumId, aifs, cw_min, cw_max, burst)
+    def set_cw(self, cw):
+        qumId = 1 #BE
+        aifs = 2
+        cwmin = int(cw)
+        cwmax = int(cw)
+        burst = 0
 
-###
-alloc = 0.20
-smooth = None
-ct_prev = -1
-ct = args.ct_initial
+        txq_params_msg = '{} {} {} {} {}'.format(qumId, aifs, cwmin, cwmax,
+                burst)
+        f_cw = open(self.txq_params_fname, 'w')
+        f_cw.write(txq_params_msg)
+        f_cw.close()
 
-if not(args.no_react):
-    set_ct(ct)
+    def log(self, alloc, airtime, cw_prev, cw):
+        self.log_file.write('{:.0f},{:.5f},{:.5f},{},{}\n'.format(
+                time.time(), alloc, airtime, cw_prev, cw))
+        self.log_file.flush()
 
-ao = AirtimeObserver()
-while True:
-    time.sleep(args.sleep_time)
-    airtime = ao.airtime()
+    def update_cw(self, alloc, airtime, cw_prev):
+        self.log(alloc, airtime, cw_prev, -1)
+        return -1
 
-    if smooth is None:
-        smooth = airtime
+class TunerNew(TunerBase):
 
-    if not(args.no_react):
-        smooth = args.beta*airtime + (1.0 - args.beta)*smooth
-        ct_prev = ct
-        ct = int((smooth - alloc)*args.k) + ct
-        ct = 0 if ct < 0 else ct
-        ct = 1023 if ct > 1023 else ct
-        set_ct(ct)
+    def __init__(self, iface, log_file, cw_init, k):
+        super(TunerNew, self).__init__(iface, log_file)
 
-    args.log_file.write('{:.0f},{:.5f},{:.5f},{:.5f},{},{}\n'.format(
-            time.time(), alloc, airtime, smooth, ct_prev, ct))
-    args.log_file.flush()
+        self.k = k
+        self.set_cw(cw_init)
 
-###
-#n = 1.0
-#avg = 0.0
-#ao = AirtimeObserver()
-#while True:
-#    time.sleep(1.0)
-#    airtime = ao.airtime()
-#
-#    avg += (airtime - avg) / n
-#    n += 1
-#
-#    out.write('{},{:.5f},{:.5f}\n'.format(int(time.time()), airtime, avg))
-#    out.flush()
-###
+        self.smooth = None
+
+    def update_cw(self, alloc, airtime, cw_prev):
+        beta = 0.5
+        if self.smooth is None:
+            self.smooth = airtime
+        else:
+            self.smooth = beta*airtime + (1.0 - beta)*self.smooth
+
+        cw = int((self.smooth - alloc)*self.k) + cw_prev
+        cw = 0 if cw < 0 else cw
+        cw = 1023 if cw > 1023 else cw
+        self.set_cw(cw)
+
+        self.log(alloc, airtime, cw_prev, cw)
+        return cw
+
+if __name__ == '__main__':
+    p = argparse.ArgumentParser(description='New CW tuning implementation.',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    p.add_argument('log_file', action='store', type=argparse.FileType('w'),
+            help='file to write REACT log to')
+    p.add_argument('-k', action='store', default=200.0, type=float,
+            help='k-multiplier for airtime tuning')
+    p.add_argument('-n', '--no_tuning', action='store_true',
+            help="don't actually do any tuning (but still log airtime)")
+    p.add_argument('-c', '--cw_initial', action='store', default=0, type=int,
+            help='initial CW value')
+    p.add_argument('-t', '--sleep_time', action='store', default=1.0,
+            type=float, help='length (in seconds) of observation interval')
+    p.add_argument('-a', '--airtime_alloc', action='store', default=0.20,
+            type=float, help='airtime allocated to this node via REACT')
+    args = p.parse_args()
+
+    if args.no_tuning:
+        tuner = TunerBase('wlan0', args.log_file)
+        cw_prev = -1
+    else:
+        tuner = TunerNew('wlan0', args.log_file, args.cw_initial, args.k)
+        cw_prev = args.cw_initial
+
+    ao = AirtimeObserver()
+    while True:
+        time.sleep(args.sleep_time)
+        airtime = ao.airtime()
+
+        cw_prev = tuner.update_cw(args.airtime_alloc, airtime, cw_prev)
