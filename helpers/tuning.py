@@ -46,24 +46,25 @@ class TunerNew(TunerBase):
         super(TunerNew, self).__init__(iface, log_file)
 
         self.k = k
-        self.set_cw(cw_init)
-
+        self.cw_prev = cw_init
         self.smooth = None
 
-    def update_cw(self, alloc, airtime, cw_prev):
+        self.set_cw(cw_init)
+
+    def update_cw(self, alloc, airtime):
         beta = 0.5
         if self.smooth is None:
             self.smooth = airtime
         else:
             self.smooth = beta*airtime + (1.0 - beta)*self.smooth
 
-        cw = int((self.smooth - alloc)*self.k) + cw_prev
+        cw = int((self.smooth - alloc)*self.k) + self.cw_prev
         cw = 0 if cw < 0 else cw
         cw = 1023 if cw > 1023 else cw
         self.set_cw(cw)
 
-        self.log(alloc, airtime, cw_prev, cw)
-        return cw
+        self.log(alloc, airtime, self.cw_prev, cw)
+        self.cw_prev = cw
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description='New CW tuning implementation.',
@@ -84,14 +85,12 @@ if __name__ == '__main__':
 
     if args.no_tuning:
         tuner = TunerBase('wlan0', args.log_file)
-        cw_prev = -1
     else:
         tuner = TunerNew('wlan0', args.log_file, args.cw_initial, args.k)
-        cw_prev = args.cw_initial
 
     ao = AirtimeObserver()
     while True:
         time.sleep(args.sleep_time)
         airtime = ao.airtime()
 
-        cw_prev = tuner.update_cw(args.airtime_alloc, airtime, cw_prev)
+        tuner.update_cw(args.airtime_alloc, airtime)

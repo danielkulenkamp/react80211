@@ -128,35 +128,28 @@ def stop_react2():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, beta=None, k=None, no_react=False, ct=None,
-        sleep_time=None):
+def run_react(out_dir=None, enable_react=True):
     args = []
 
+    args.append('-i')
+    args.append('wlan0')
+
+    args.append('-t')
+    args.append('0.1')
+
+    args.append('-r')
+    args.append('6000')
+
+    if enable_react:
+        args.append('-e')
+
+    args.append('-o')
     if out_dir is None:
         out_dir = makeout()
     args.append('{}/react.csv'.format(out_dir))
 
-    if beta is not None:
-        args.append('-b')
-        args.append(str(beta))
-
-    if k is not None:
-        args.append('-k')
-        args.append(str(k))
-
-    if no_react:
-        args.append('-n')
-
-    if ct is not None:
-        args.append('-c')
-        args.append(str(ct))
-
-    if sleep_time is not None:
-        args.append('-t')
-        args.append(str(sleep_time))
-
     stop_react()
-    fab.sudo('setsid {}/_react.py {} &>/dev/null </dev/null &'.format(
+    fab.sudo('setsid {}/_react.py {} &>~/react.out </dev/null &'.format(
         project_path, ' '.join(args)), pty=False)
 
 @fab.task
@@ -182,7 +175,7 @@ def run_react2(out_dir=None, enable_react=True):
     args.append(out_dir)
 
     stop_react2()
-    fab.sudo('setsid {}/react.py {} &>/dev/null </dev/null &'.format(
+    fab.sudo('setsid {}/react.py {} &>~/react.out </dev/null &'.format(
         project_path, ' '.join(args)), pty=False)
 
 ################################################################################

@@ -1,5 +1,8 @@
 #! /usr/bin/python
 
+from helpers.airtime import AirtimeObserver
+from helpers.tuning import TunerNew
+
 from scapy.all import *
 import getopt, sys
 import time
@@ -149,11 +152,20 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
     return [tslot, tx_time_theor, t_rts, t_ack]
 
 def update_cw(iface,i_time,enable_react,sleep_time,data_path):
+        global my_mac
+        log_file = open(data_path, 'w')
+        cw_initial = 0
+        k = 200.0
 
-    while True:
-        if 1:
-            update_cw_decision(iface,enable_react,sleep_time,data_path);
-        time.sleep(sleep_time - ((time.time() - starttime) % sleep_time))
+        tuner = TunerNew('wlan0', log_file, cw_initial, k)
+
+        ao = AirtimeObserver()
+        while True:
+            time.sleep(sleep_time - ((time.time() - starttime) % sleep_time))
+            airtime = ao.airtime()
+
+            alloc = float(CLAIM_CAPACITY)*float(neigh_list[my_mac]['claim'])
+            tuner.update_cw(alloc, airtime)
 
 """
 Set CW
@@ -432,17 +444,6 @@ def main():
     ff = open(f_name, 'w')
     ff.write(script_source)
     ff.close()
-
-    my_ip=str(netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr'])
-    if (not os.path.exists(data_path)):
-        print "{} does not exists, please create it".format(data_path)
-        return
-    out_file="{}/{}.csv".format(data_path,my_ip);
-    with open(out_file, "w") as myfile:
-        myfile.write("")
-        myfile.close()
-
-
 
     init(iface);
     try:
