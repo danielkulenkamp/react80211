@@ -9,12 +9,10 @@ Author: Fabrizio Giuliano
 from helpers.conn_matrix import ConnMatrix
 
 from distutils.util import strtobool
-import time
 ###
 
 import os
 import os.path
-import datetime
 import re
 import sys
 #import scapy.all as scapy
@@ -234,21 +232,30 @@ def iperf_stop_clients():
 ################################################################################
 # exps
 
+@fab.task
+@fab.parallel
 def makeout(out_dir='~/data/test', trial_dir=None):
-    subdirs = []
+    expanduser_cmd = "python -c 'import os; print os.path.expanduser(\"{}\")'"
+    out_dir = fab.run(expanduser_cmd.format(out_dir))
 
-    subdirs.append(out_dir)
+    i = 0
+    while True:
+        subdirs = []
+        subdirs.append(out_dir)
+        subdirs.append('{:03}'.format(i))
+        if trial_dir is not None:
+            subdirs.append(trial_dir)
+        subdirs.append(fab.env.host)
 
-    today = datetime.datetime.today()
-    subdirs.append('{:02}{:02}'.format(today.month, today.day))
+        host_out_dir = '/'.join(subdirs)
 
-    if trial_dir is not None:
-        subdirs.append(trial_dir)
+        from fabric.contrib.files import exists
+        if not(exists(host_out_dir)):
+            break
 
-    subdirs.append(fab.env.host)
+        i +=1
 
-    host_out_dir = '/'.join(subdirs)
-    fab.run('mkdir -p {}'.format(host_out_dir))
+    fab.run('mkdir -p "{}"'.format(host_out_dir))
     return host_out_dir
 
 @fab.task
