@@ -49,8 +49,8 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
 
-def airtime(node_dir):
-    plot_react_csv_data(node_dir, 2)
+def airtime(node_dir, col=2):
+    plot_react_csv_data(node_dir, int(col))
     plt.xlabel('Time')
     plt.ylabel('Airtime (%)')
     plt.title('Airtime vs. Time')
@@ -110,11 +110,13 @@ if __name__ == '__main__':
     fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence }
 
     p = argparse.ArgumentParser()
+    p.add_argument('node_dir', help='data directory for specific trial')
     p.add_argument('command', choices=fn_map,
             help='data processing sub-command')
-    p.add_argument('node_dir', help='data directory for specific trial')
+    p.add_argument('override', nargs='*',
+            help='override functions default arguments')
     args = p.parse_args()
 
     assert(os.path.isdir(args.node_dir)) # bad node_dir argument?
 
-    fn_map[args.command](args.node_dir)
+    fn_map[args.command](args.node_dir, *args.override)
