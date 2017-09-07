@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 from helpers.airtime import AirtimeObserver
-from helpers.tuning import TunerNew
+from helpers.tuning import TunerNew, TunerBase
 
 from scapy.all import *
 import getopt, sys
@@ -157,7 +157,10 @@ def update_cw(iface,i_time,enable_react,sleep_time,data_path):
         cw_initial = 0
         k = 200.0
 
-        tuner = TunerNew('wlan0', log_file, cw_initial, k)
+        if enable_react:
+            tuner = TunerNew(iface, log_file, cw_initial, k)
+        else:
+            tuner = TunerBase(iface, log_file)
 
         ao = AirtimeObserver()
         while True:

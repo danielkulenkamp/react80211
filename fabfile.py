@@ -273,23 +273,24 @@ def exp_test():
 
 @fab.task
 @fab.parallel
-def exp_rvr(use_orig):
-    use_orig = bool(strtobool(use_orig))
+def exp_4con(use):
+    assert(use == "dot" or use == "new" or use == "old")
 
-    subdir = 'react2' if use_orig else 'react'
-    host_out_dir = makeout('~/data/00_rvr', subdir)
+    host_out_dir = makeout('~/data/10_4con', use)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm, rate='6000K')
+    iperf_start_clients(host_out_dir, cm)
 
-    if use_orig:
-        run_react2(out_dir=host_out_dir)
-    else:
+    if use == "dot":
+        run_react(out_dir=host_out_dir, enable_react=False)
+    elif use == "new":
         run_react(out_dir=host_out_dir)
+    elif use == "old":
+        run_react2(out_dir=host_out_dir)
 
 @fab.task
 @fab.parallel

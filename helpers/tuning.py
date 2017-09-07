@@ -36,9 +36,8 @@ class TunerBase(object):
                 time.time(), alloc, airtime, cw_prev, cw))
         self.log_file.flush()
 
-    def update_cw(self, alloc, airtime, cw_prev):
-        self.log(alloc, airtime, cw_prev, -1)
-        return -1
+    def update_cw(self, alloc, airtime):
+        self.log(alloc, airtime, -1, -1)
 
 class TunerNew(TunerBase):
 
