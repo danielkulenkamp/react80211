@@ -7,12 +7,19 @@ import sys
 import argparse
 from glob import glob
 
+class MissingReactCsvData(Exception):
+    """ Raise when react.csv files are missing. """
+
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []
 
-    # TODO: check if this file exists
+    nodes = glob('{}/*'.format(node_dir))
     paths = glob('{}/*/react.csv'.format(node_dir))
+
+    if len(nodes) != len(paths):
+        raise MissingReactCsvData()
+
     for i in xrange(len(paths)):
         path = paths[i]
         x_list.append(np.loadtxt(path, delimiter=',', usecols=(x_index,)))
