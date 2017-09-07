@@ -1,5 +1,7 @@
 #! /usr/bin/python
 
+from helpers.airtime import AirtimeObserver
+
 from scapy.all import *
 import getopt, sys
 import time
@@ -150,9 +152,9 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
 
 def update_cw(iface,i_time,enable_react,sleep_time,data_path):
 
+    ao = AirtimeObserver()
     while True:
-        if 1:
-            update_cw_decision(iface,enable_react,sleep_time,data_path);
+        update_cw_decision(iface,enable_react,sleep_time,data_path,ao.airtime())
         time.sleep(sleep_time - ((time.time() - starttime) % sleep_time))
 
 """
@@ -175,7 +177,7 @@ def setCW(iface,qumId,aifs,cwmin,cwmax,burst):
 """
 update CW decision based on ieee80211 stats values and virtual channel freezing estimation
 """
-def update_cw_decision(iface,enable_react,sleep_time,data_path):
+def update_cw_decision(iface,enable_react,sleep_time,data_path,airtime):
     #get stats
     global my_mac
     global cw
@@ -243,7 +245,7 @@ def update_cw_decision(iface,enable_react,sleep_time,data_path):
 
             #TEST 4 CLAIM_CAPACITY = 0.8 #GOOD
             cw_=cw
-            cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
+            #cw_= pow(2, round(math.log(cw_)/math.log(2)))-1;
 
             #TEST 5 CLAIM_CAPACITY = 1 #BAD!
 
@@ -262,12 +264,12 @@ def update_cw_decision(iface,enable_react,sleep_time,data_path):
         thr=(data_count)*1470*8/float(dd*1e6);
         if debug:
             print "t=%.4f,dd=%.4f data_count=%.4f rts_count=%.4f busytx2=%.4f(%.4f) gross_rate=%.4f,avg_tx=%.4f freeze2=%.4f freeze_predict=%.4f tx_goal=%.4f I=%.4f cw=%.4f cw_=%.4f psucc=%.4f thr=%.4f" % (time.time(),dd,data_count,rts_count,busytx2,busytx2/float(dd),gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
-        out_val="%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f" % (time.time(),dd,data_count,rts_count,busytx2,gross_rate,avg_tx,freeze2,freeze_predict,tx_goal,I,cw,cw_,psucc,thr)
 
-        my_ip=str(netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr'])
-        out_file="{}/{}.csv".format(data_path,my_ip);
+        out_file="{}/react.csv".format(data_path)
         with open(out_file, "a") as myfile:
-            myfile.write(out_val+"\n")
+            myfile.write('{:.5f},{:.5f},{:.5f},{},{}\n'.format(
+                    time.time(), gross_rate, airtime, -1, cw_))
+            myfile.flush()
 
 
 def update_offer():
@@ -433,11 +435,10 @@ def main():
     ff.write(script_source)
     ff.close()
 
-    my_ip=str(netifaces.ifaddresses(iface)[netifaces.AF_INET][0]['addr'])
     if (not os.path.exists(data_path)):
         print "{} does not exists, please create it".format(data_path)
         return
-    out_file="{}/{}.csv".format(data_path,my_ip);
+    out_file="{}/react.csv".format(data_path)
     with open(out_file, "w") as myfile:
         myfile.write("")
         myfile.close()

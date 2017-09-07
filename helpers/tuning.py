@@ -32,7 +32,7 @@ class TunerBase(object):
         f_cw.close()
 
     def log(self, alloc, airtime, cw_prev, cw):
-        self.log_file.write('{:.0f},{:.5f},{:.5f},{},{}\n'.format(
+        self.log_file.write('{:.5f},{:.5f},{:.5f},{},{}\n'.format(
                 time.time(), alloc, airtime, cw_prev, cw))
         self.log_file.flush()
 
