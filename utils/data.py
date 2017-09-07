@@ -4,11 +4,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import sys
+import os
 import argparse
 from glob import glob
-
-class MissingReactCsvData(Exception):
-    """ Raise when react.csv files are missing. """
 
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
@@ -17,8 +15,7 @@ def load_react_csv_data(node_dir, x_index, y_index):
     nodes = glob('{}/*'.format(node_dir))
     paths = glob('{}/*/react.csv'.format(node_dir))
 
-    if len(nodes) != len(paths):
-        raise MissingReactCsvData()
+    assert(len(nodes) == len(paths) and len(paths) != 0) # missing react.csv?
 
     for i in xrange(len(paths)):
         path = paths[i]
@@ -115,8 +112,9 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('command', choices=fn_map,
             help='data processing sub-command')
-    p.add_argument('node_dir', action='store',
-            help='data directory for specific trial')
+    p.add_argument('node_dir', help='data directory for specific trial')
     args = p.parse_args()
+
+    assert(os.path.isdir(args.node_dir)) # bad node_dir argument?
 
     fn_map[args.command](args.node_dir)
