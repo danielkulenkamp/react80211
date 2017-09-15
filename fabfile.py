@@ -210,6 +210,10 @@ def screen_stop_all():
 ################################################################################
 # iperf
 
+def get_my_mac(dev='wlan0'):
+    cmd = 'python -c \'from netifaces import *; print ifaddresses("{}")[17][0]["addr"]\''
+    return fab.run(cmd.format(dev))
+
 def get_my_ip(dev='wlan0'):
     cmd = 'python -c \'from netifaces import *; print ifaddresses("{}")[AF_INET][0]["addr"]\''
     return fab.run(cmd.format(dev))
@@ -228,6 +232,69 @@ def iperf_start_clients(host_out_dir, conn_matrix, rate='1G'):
 @fab.task
 def iperf_stop_clients():
     screen_stop_session('iperf_client')
+
+################################################################################
+# Multi-hop MAC address setup
+
+import socket
+import struct
+
+def dot2long(ip):
+    return struct.unpack("!L", socket.inet_aton(ip))[0]
+
+def long2dot(ip):
+    return socket.inet_ntoa(struct.pack('!L', ip))
+
+def collect_ip2mac_map(ip2mac):
+    ip2mac[dot2long(get_my_ip())] = get_my_mac()
+
+def sudo_ip_neigh_add(ip, mac):
+    if not(isinstance(ip, str)):
+        ip = long2dot(ip)
+
+    ip_neigh_add_cmd = 'ip neighbor add {} lladdr {} dev wlan0 nud permanent'
+    fab.sudo(ip_neigh_add_cmd.format(ip, mac))
+
+def set_neighbors(ip2mac):
+    low_neigh = None
+    myip = dot2long(get_my_ip())
+    high_neigh = None
+
+    lower = []
+    higher = []
+
+    for ip in ip2mac.keys():
+        if ip + 1 == myip:
+            low_neigh = ip
+        elif ip - 1 == myip:
+            high_neigh = ip
+        elif ip < myip:
+            lower.append(ip)
+        elif ip > myip:
+            higher.append(ip)
+        else:
+            pass # ip == myip
+
+    fab.sudo('sysctl -w net.ipv4.ip_forward=1')
+    fab.sudo('ip link set dev wlan0 arp off')
+    fab.sudo('ip neigh flush dev wlan0')
+
+    if low_neigh is not None:
+        sudo_ip_neigh_add(low_neigh, ip2mac[low_neigh])
+        for ip in lower:
+            sudo_ip_neigh_add(ip, ip2mac[low_neigh])
+
+    if high_neigh is not None:
+        sudo_ip_neigh_add(high_neigh, ip2mac[high_neigh])
+        for ip in higher:
+            sudo_ip_neigh_add(ip, ip2mac[high_neigh])
+
+@fab.task
+@fab.runs_once
+def setup_multihop():
+    ip2mac = {}
+    fab.execute(collect_ip2mac_map, ip2mac)
+    fab.execute(set_neighbors, ip2mac)
 
 ################################################################################
 # exps
@@ -290,6 +357,24 @@ def exp_4con(use):
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
+    if use == "dot":
+        run_react(out_dir=host_out_dir, enable_react=False)
+    elif use == "new":
+        run_react(out_dir=host_out_dir)
+    elif use == "old":
+        run_react2(out_dir=host_out_dir)
+
+@fab.task
+@fab.parallel
+def exp_line(use):
+    assert(use == "dot" or use == "new" or use == "old")
+
+    host_out_dir = makeout('~/data/10_line', use)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.4')
     iperf_start_clients(host_out_dir, cm)
 
     if use == "dot":
