@@ -8,17 +8,7 @@ class Auctioneer(object):
         self.claims = {}
 
     def store(self, node, claim):
-        if node not in self.claims.keys():
-            old = None
-            print "New bidder: {}".format(node)
-        else:
-            old = self.claims[node]
         self.claims[node] = float(claim)
-
-        if old != self.claims[node]:
-            return self.update()
-        else:
-            return None
 
     def update(self):
         demands = set(self.claims)
@@ -41,4 +31,3 @@ class Auctioneer(object):
                         airtime -= self.claims[b]
                         done = False
         return offer
-

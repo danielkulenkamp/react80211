@@ -19,4 +19,3 @@ class ConnMatrix(object):
             else:
                 if re.match(match, n):
                     yield n
-
