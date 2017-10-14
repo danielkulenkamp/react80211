@@ -37,13 +37,23 @@ class ReactSimNode(object):
 
         return msg, changed
 
-names = ['a', 'b', 'c', 'd']
+#names = ['a', 'b', 'c', 'd']
 cm = ConnMatrix()
 nodes = {}
 
-for name in names:
-    nodes[name] = ReactSimNode(name, 0.8, 0.2)
-    cm.add(name, r'.*')
+nodes['a'] = ReactSimNode('a', 1.0, 1.0)
+nodes['b'] = ReactSimNode('b', 1.0, 1.0)
+nodes['c'] = ReactSimNode('c', 1.0, 1.0)
+nodes['d'] = ReactSimNode('d', 1.0, 1.0)
+nodes['e'] = ReactSimNode('e', 1.0, 1.0)
+nodes['f'] = ReactSimNode('e', 1.0, 1.0)
+
+cm.add('a', r'f|b')
+cm.add('b', r'a|c')
+cm.add('c', r'b|d')
+cm.add('d', r'c|e')
+cm.add('e', r'd|f')
+cm.add('f', r'e|a')
 
 done = False
 rnd = 0
@@ -65,7 +75,7 @@ while not(done):
 
     sys.stdout.write('After {} rounds:'.format(rnd))
     for n in nodes:
-        sys.stdout.write(' {}:{}'.format(nodes[n].last_claim,
+        sys.stdout.write(' ({}, {})'.format(nodes[n].last_claim,
                 nodes[n].last_offer))
     sys.stdout.write('\n')
 
