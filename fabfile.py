@@ -220,14 +220,18 @@ def get_my_ip(dev='wlan0'):
 
 @fab.task
 def iperf_start_servers():
-    screen_start_session('iperf_server', 'iperf -s -u')
+    screen_start_session('iperf_server_udp', 'iperf -s -u')
+    screen_start_session('iperf_server_tcp', 'iperf -s')
 
 @fab.task
-def iperf_start_clients(host_out_dir, conn_matrix, rate='1G'):
+def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
     for server in conn_matrix.links(get_my_ip()):
-        screen_start_session('iperf_client',
-                'iperf -c {0} -u -b {2} -t -1 -i 3 -yC | tee {1}/{0}.csv'
-                .format(server, host_out_dir, rate))
+        cmd = 'iperf -c {}'.format(server)
+        if not(tcp):
+            cmd += ' -u -b {}'.format(rate)
+        cmd += ' -t -1 -i 1 -yC | tee {}/{}.csv'.format(host_out_dir, server)
+
+        screen_start_session('iperf_client', cmd)
 
 @fab.task
 def iperf_stop_clients():
