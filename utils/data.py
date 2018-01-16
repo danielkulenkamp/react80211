@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -97,17 +97,22 @@ def converge_time(node_dir, cv_threshold=0.10):
 def convergence(node_dir):
     print converge_time(node_dir)
 
-def thr():
+def thr(node_dir):
     i = 1
-    for n in nodes:
-        path = glob('{}/zotac{}/192.*.csv'.format(trial, n))[0]
+    for path in glob('{}/zotac*/192.*.csv'.format(node_dir)):
         thr = np.loadtxt(path, delimiter=',', usecols=(8,))/1000000
-        print "{} {} {}".format(i, np.mean(thr), np.std(thr))
-
+        print "{:02}\t{:.5f}\t{:.5f}".format(i, np.mean(thr), np.std(thr))
         i += 1
 
+    #all_bytes_sent = 0
+    #for path in glob('{}/zotac*/192.*.csv'.format(node_dir)):
+    #    thr = np.loadtxt(path, delimiter=',', usecols=(7,))
+    #    all_bytes_sent += np.sum(thr[:240])
+    #print all_bytes_sent
+
 if __name__ == '__main__':
-    fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence }
+    fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence,
+            'throughput': thr }
 
     p = argparse.ArgumentParser()
     p.add_argument('node_dir', help='data directory for specific trial')
