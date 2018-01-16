@@ -9,6 +9,7 @@ Author: Fabrizio Giuliano
 from helpers.conn_matrix import ConnMatrix
 
 from distutils.util import strtobool
+import time
 ###
 
 import os
@@ -387,6 +388,42 @@ def exp_line(use):
         run_react(out_dir=host_out_dir)
     elif use == "old":
         run_react2(out_dir=host_out_dir)
+
+@fab.task
+@fab.parallel
+def exp_longline(dot, udp=True, flows=1):
+    #NAME = '{}lowflow'.format(flows)
+    NAME = 'manyflow'.format(flows)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2$')
+    cm.add('192.168.0.2', r'192.168.0.1$')
+    cm.add('192.168.0.3', r'192.168.0.4$')
+    cm.add('192.168.0.4', r'192.168.0.3$')
+    cm.add('192.168.0.5', r'192.168.0.6$')
+    cm.add('192.168.0.6', r'192.168.0.5$')
+    cm.add('192.168.0.7', r'192.168.0.8$')
+    cm.add('192.168.0.8', r'192.168.0.7$')
+    cm.add('192.168.0.9', r'192.168.0.10$')
+    cm.add('192.168.0.10', r'192.168.0.9$')
+
+    trial = '{}_{}_{}'.format(NAME, 'udp' if udp else 'tcp',
+            'dot' if dot else 'new')
+    host_out_dir = makeout('~/data/11_longline', trial)
+
+    iperf_start_clients(host_out_dir, cm, tcp=not(udp))
+    #iperf_start_clients(host_out_dir, cm, rate='1M')
+    run_react(out_dir=host_out_dir, enable_react=not(dot))
+
+@fab.task
+@fab.runs_once
+def runner():
+    for dot in [True, False]:
+        for udp in [True, False]:
+        #for flows in [1, 2]:
+            fab.execute(exp_longline, dot, udp=udp)
+            time.sleep(240)
+            fab.execute(stop_exp)
 
 @fab.task
 @fab.parallel
