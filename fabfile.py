@@ -521,15 +521,15 @@ def exp_cnert_noise(out_dir, rate):
         iperf_start_clients(host_out_dir, cm, rate)
 
 @fab.task
-@fab.parallel
-def exp_graph_start():
-    host_out_dir = makeout('~/data/99_graph')
-    screen_start_session('tcpdump',
-            'sudo tcpdump -Al -i wlan0 > {}/dump.txt'.format(host_out_dir))
+def exp_graph2():
+    host_out_dir = makeout('~/data/98_graph2')
+    print host_out_dir
 
-@fab.task
-def exp_graph_run():
-    fab.run('{}/bcast.py {}'.format(project_path, fab.env.host_string))
+    for i in range(len(fab.env.hosts)):
+        cmd = 'ping -c 10 -I wlan0 192.168.0.{0} | tee {1}/192.168.0.{0}'
+        fab.run(cmd.format(i + 1, host_out_dir))
+
+    print
 
 @fab.task
 @fab.parallel
