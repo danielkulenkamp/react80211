@@ -1,9 +1,11 @@
 #!/usr/bin/python
 
-from helpers.airtime import AirtimeObserver
+from airtime import AirtimeObserver, ChannelObserver
 
+import sys
 import argparse
 import time
+import subprocess
 
 class TunerBase(object):
 
@@ -65,11 +67,38 @@ class TunerNew(TunerBase):
         self.log(alloc, airtime, self.cw_prev, cw)
         self.cw_prev = cw
 
+class TunerOld(TunerBase):
+
+    def __init__(self, iface, log_file, cw_init):
+        super(TunerOld, self).__init__(iface, log_file)
+
+        self.cmd = ['cat', '/sys/kernel/debug/ieee80211/phy0/statistics/'
+                'dot11RTSSuccessCount']
+
+        self.observer = ChannelObserver()
+        self.n = int(subprocess.check_output(self.cmd))
+        self.n_old = None
+        self.cw_prev = cw_init
+
+    def update_cw(self, alloc, airtime):
+        self.observer.update()
+        busy = self.observer.surveysays('busy')
+
+        self.n_old = self.n
+        self.n = int(subprocess.check_output(self.cmd))
+        n = self.n - self.n_old
+
+        cw = int((2/9e-3)*(airtime*((1 - alloc)/(n*alloc))*busy))
+        cw = 0 if cw < 0 else cw
+        cw = 1023 if cw > 1023 else cw
+        self.set_cw(cw)
+
+        self.log(alloc, airtime, self.cw_prev, cw)
+        self.cw_prev = cw
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description='New CW tuning implementation.',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('log_file', action='store', type=argparse.FileType('w'),
-            help='file to write REACT log to')
     p.add_argument('-k', action='store', default=200.0, type=float,
             help='k-multiplier for airtime tuning')
     p.add_argument('-n', '--no_tuning', action='store_true',
@@ -83,9 +112,10 @@ if __name__ == '__main__':
     args = p.parse_args()
 
     if args.no_tuning:
-        tuner = TunerBase('wlan0', args.log_file)
+        # TODO: change this back to TunerBase??
+        tuner = TunerOld('wlan0', sys.stdout, args.cw_initial)
     else:
-        tuner = TunerNew('wlan0', args.log_file, args.cw_initial, args.k)
+        tuner = TunerNew('wlan0', sys.stdout, args.cw_initial, args.k)
 
     ao = AirtimeObserver()
     while True:

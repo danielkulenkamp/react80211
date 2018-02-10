@@ -3,46 +3,64 @@
 from __future__ import division
 
 import subprocess
-import sys
 import time
 import argparse
 
-class AirtimeObserver(object):
+def iw_survey_dump(dev):
+    cmd = ['iw', dev, 'survey', 'dump']
+    output = subprocess.check_output(cmd).split()
+    survey = {}
 
-    def __init__(self, dev='wlan0'):
-        self.cmd = ['iw', dev, 'survey', 'dump']
-        self.iw_survey_dump()
-
-    def skip(self, i, to):
-        while i < len(self.output):
-            if self.output[i] == to:
+    def skip(output, i, to):
+        while i < len(output):
+            if output[i] == to:
                 break
             else:
                 i += 1
-
         return i
 
-    def iw_survey_dump(self):
-        self.output = subprocess.check_output(self.cmd).split()
+    i = 0
+    i = skip(output, i, '[in')
 
-        i = 0
-        i = self.skip(i, '[in')
-        i = self.skip(i, 'active')
+    i = skip(output, i, 'active')
+    survey['active'] = float(output[i + 2])
 
-        self.active = float(self.output[i + 2])
+    i = skip(output, i, 'busy')
+    survey['busy'] = float(output[i + 2])
 
-        i = self.skip(i, 'transmit')
+    i = skip(output, i, 'receive')
+    survey['receive'] = float(output[i + 2])
 
-        self.transmit = float(self.output[i + 2])
+    i = skip(output, i, 'transmit')
+    survey['transmit'] = float(output[i + 2])
+
+    return survey
+
+class ChannelObserver(object):
+
+    def __init__(self, dev='wlan0'):
+        self.dev = dev
+
+        self.new_survey = iw_survey_dump(self.dev)
+        self.old_survey = {}
+
+    def update(self):
+        self.old_survey = self.new_survey
+        self.new_survey = iw_survey_dump(self.dev)
+
+    def surveysays(self, question):
+        return self.new_survey[question] - self.old_survey[question]
+
+class AirtimeObserver(ChannelObserver):
 
     def airtime(self):
-        old_active = self.active
-        old_transmit = self.transmit
+        self.update()
 
-        self.iw_survey_dump()
+        active = self.surveysays('active')
+        transmit = self.surveysays('transmit')
 
-        if old_active != self.active:
-            return (self.transmit - old_transmit) / (self.active - old_active)
+        if active != 0:
+            return transmit/active
         else:
             return 0.0
 

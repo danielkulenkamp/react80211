@@ -345,10 +345,8 @@ def exp_test():
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
+    cm.add('192.168.0.2', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm, tcp=True)
 
 @fab.task
 @fab.parallel
