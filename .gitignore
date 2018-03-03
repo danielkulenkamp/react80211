@@ -3,3 +3,4 @@ backports-wireless/backports*
 *.pyc
 data
 node_info.txt
+env/
