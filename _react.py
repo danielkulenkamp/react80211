@@ -1,7 +1,7 @@
 #! /usr/bin/python
 
 from helpers.airtime import AirtimeObserver
-from helpers.tuning import TunerNew, TunerBase
+from helpers.tuning import TunerNew, TunerOld, TunerBase
 
 from scapy.all import *
 import getopt, sys
@@ -151,14 +151,18 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
 
     return [tslot, tx_time_theor, t_rts, t_ack]
 
-def update_cw(iface,i_time,enable_react,sleep_time,data_path):
+def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner):
         global my_mac
         log_file = open(data_path, 'w')
         cw_initial = 0
         k = 200.0
 
         if enable_react:
-            tuner = TunerNew(iface, log_file, cw_initial, k)
+            assert(which_tuner == 'new' or which_tuner == 'old')
+            if which_tuner == 'new':
+                tuner = TunerNew(iface, log_file, cw_initial, k)
+            elif which_tuner == 'old':
+                tuner = TunerOld(iface, log_file, cw_initial)
         else:
             tuner = TunerBase(iface, log_file)
 
@@ -382,8 +386,8 @@ def usage(in_opt,ext_in_opt):
     print("input error: here optionlist: \n{0} --> {1}\n".format(in_opt,str(ext_in_opt)))
 
 def main():
-    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "--output_path"];
-    in_opt="hi:t:r:eo:"
+    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "output_path"];
+    in_opt="hi:t:r:e:o:"
     try:
         opts, args = getopt.getopt(sys.argv[1:], in_opt, ext_in_opt)
     except getopt.GetoptError as err:
@@ -395,6 +399,7 @@ def main():
     iface='wlan0';
     iperf_rate=0;
     enable_react=False
+    which_tuner = None
     data_path=""
 
     script_source='\n \
@@ -437,6 +442,7 @@ def main():
             iperf_rate = float(a)
         if o  in ("-e", "--enable_react"):
             enable_react=True
+            which_tuner = a
         if o  in ("-o", "--output_path"):
             data_path=str(a)
         elif o in ("-h", "--help"):
@@ -459,7 +465,7 @@ def main():
         # thread update pkt statistics
         #thread.start_new_thread( get_ieee80211_stats,(iface, i_time) )
         #
-        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path))
+        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path,which_tuner))
 
     except Exception, err:
         print err

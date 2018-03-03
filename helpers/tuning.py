@@ -88,7 +88,8 @@ class TunerOld(TunerBase):
         self.n = int(subprocess.check_output(self.cmd))
         n = self.n - self.n_old
 
-        cw = int((2/9e-3)*(airtime*((1 - alloc)/(n*alloc))*busy))
+        n_alloc = n*alloc if n*alloc != 0 else 1
+        cw = int((2/9e-3)*(airtime*((1 - alloc)/(n_alloc))*busy))
         cw = 0 if cw < 0 else cw
         cw = 1023 if cw > 1023 else cw
         self.set_cw(cw)

@@ -127,7 +127,7 @@ def stop_react2():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, enable_react=True):
+def run_react(out_dir=None, tuner='new'):
     args = []
 
     args.append('-i')
@@ -139,8 +139,10 @@ def run_react(out_dir=None, enable_react=True):
     args.append('-r')
     args.append('6000')
 
-    if enable_react:
+    # Without a tuner REACT is disabled and we just collect airtime data
+    if tuner == 'new' or tuner == 'old':
         args.append('-e')
+        args.append(tuner)
 
     args.append('-o')
     if out_dir is None:
@@ -302,7 +304,7 @@ def setup_multihop():
     fab.execute(set_neighbors, ip2mac)
 
 ################################################################################
-# exps
+# start/stop exps and make output dirs
 
 @fab.task
 @fab.parallel
@@ -340,6 +342,16 @@ def setup():
 
 @fab.task
 @fab.parallel
+def stop_exp():
+    stop_react()
+    stop_react2()
+    iperf_stop_clients()
+
+################################################################################
+# exps
+
+@fab.task
+@fab.parallel
 def exp_test():
     host_out_dir = makeout()
 
@@ -351,23 +363,21 @@ def exp_test():
 @fab.task
 @fab.parallel
 def exp_4con(use):
-    assert(use == "dot" or use == "new" or use == "old")
+    assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
 
-    host_out_dir = makeout('~/data/10_4con', use)
+    host_out_dir = makeout('~/data/01_4con', use)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
+    iperf_start_clients(host_out_dir, cm, tcp=True)
 
-    if use == "dot":
-        run_react(out_dir=host_out_dir, enable_react=False)
-    elif use == "new":
-        run_react(out_dir=host_out_dir)
-    elif use == "old":
-        run_react2(out_dir=host_out_dir)
+    if use != 'oldest':
+        run_react(host_out_dir, use)
+    else:
+        run_react2(host_out_dir)
 
 @fab.task
 @fab.parallel
@@ -380,12 +390,7 @@ def exp_line(use):
     cm.add('192.168.0.1', r'192.168.0.4')
     iperf_start_clients(host_out_dir, cm)
 
-    if use == "dot":
-        run_react(out_dir=host_out_dir, enable_react=False)
-    elif use == "new":
-        run_react(out_dir=host_out_dir)
-    elif use == "old":
-        run_react2(out_dir=host_out_dir)
+    run_react(host_out_dir, use)
 
 @fab.task
 @fab.parallel
@@ -411,7 +416,7 @@ def exp_longline(dot, udp=True, flows=1):
 
     iperf_start_clients(host_out_dir, cm, tcp=not(udp))
     #iperf_start_clients(host_out_dir, cm, rate='1M')
-    run_react(out_dir=host_out_dir, enable_react=not(dot))
+    run_react(host_out_dir, 'dot' if dot else 'new')
 
 @fab.task
 @fab.runs_once
@@ -438,85 +443,48 @@ def exp_concept(enable_react):
     cm.add('192.168.0.4', r'192.168.0.1')
     iperf_start_clients(host_out_dir, cm)
 
-    run_react(out_dir=host_out_dir, no_react=not(enable_react))
+    run_react(host_out_dir, 'new' if enable_react else None)
 
-@fab.task
-@fab.parallel
-def exp_hilo(trial):
-    if trial == 'none':
-        no_react = True
-        ct = None
-    elif trial == 'low':
-        no_react = False
-        ct = 0
-    elif trial == 'high':
-        no_react = False
-        ct = 1023
-    else:
-        exit(1)
-
-    host_out_dir = makeout('~/data/02_hilo/{}'.format(trial))
-
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
-
-    run_react(out_dir=host_out_dir, no_react=no_react, ct=ct)
-
-@fab.task
-@fab.parallel
-def exp_parameters(beta, k):
-    host_out_dir = makeout('~/data/03_parameters', 'b{:03}_k{:03}'.format(
-        int(float(beta)*100.0), int(k)))
-
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
-
-    run_react(out_dir=host_out_dir, beta=beta, k=k)
-
-@fab.task
-def exp_cnert_sat(out_dir):
-    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
-    fab.run('mkdir -p {}'.format(host_out_dir))
-
-    run_react(bw_req=6000, enable_react='YES')
-
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.5')
-    cm.add('192.168.0.5', r'192.168.0.6')
-    cm.add('192.168.0.6', r'192.168.0.7')
-    cm.add('192.168.0.7', r'192.168.0.1')
-
-    iperf_start_clients(host_out_dir, cm)
-
-@fab.task
-def exp_cnert_noise(out_dir, rate):
-    host_out_dir = "{}/{}".format(out_dir, fab.env.host)
-    fab.run('mkdir -p {}'.format(host_out_dir))
-
-    if re.match(r'192\.168\.0\.(1|4)', get_my_ip()):
-        cm = ConnMatrix()
-        cm.add('192.168.0.1', r'192.168.0.4')
-        cm.add('192.168.0.4', r'192.168.0.1')
-
-        run_react(bw_req=6000, enable_react='YES')
-        iperf_start_clients(host_out_dir, cm)
-    elif int(rate) > 0:
-        cm = ConnMatrix()
-        cm.add('192.168.0.2', r'192.168.0.3')
-        cm.add('192.168.0.3', r'192.168.0.2')
-
-        iperf_start_clients(host_out_dir, cm, rate)
+#@fab.task
+#@fab.parallel
+#def exp_hilo(trial):
+#    if trial == 'none':
+#        no_react = True
+#        ct = None
+#    elif trial == 'low':
+#        no_react = False
+#        ct = 0
+#    elif trial == 'high':
+#        no_react = False
+#        ct = 1023
+#    else:
+#        exit(1)
+#
+#    host_out_dir = makeout('~/data/02_hilo/{}'.format(trial))
+#
+#    cm = ConnMatrix()
+#    cm.add('192.168.0.1', r'192.168.0.2')
+#    cm.add('192.168.0.2', r'192.168.0.3')
+#    cm.add('192.168.0.3', r'192.168.0.4')
+#    cm.add('192.168.0.4', r'192.168.0.1')
+#    iperf_start_clients(host_out_dir, cm)
+#
+#    run_react(out_dir=host_out_dir, no_react=no_react, ct=ct)
+#
+#@fab.task
+#@fab.parallel
+#def exp_parameters(beta, k):
+#    host_out_dir = makeout('~/data/03_parameters', 'b{:03}_k{:03}'.format(
+#        int(float(beta)*100.0), int(k)))
+#
+#    cm = ConnMatrix()
+#    cm.add('192.168.0.1', r'192.168.0.2')
+#    cm.add('192.168.0.2', r'192.168.0.3')
+#    cm.add('192.168.0.3', r'192.168.0.4')
+#    cm.add('192.168.0.4', r'192.168.0.1')
+#    iperf_start_clients(host_out_dir, cm)
+#
+#    run_react(out_dir=host_out_dir, beta=beta, k=k)
 
 @fab.task
 def exp_graph2():
@@ -533,10 +501,3 @@ def exp_graph2():
 @fab.parallel
 def exp_graph_stop():
     screen_stop_session('tcpdump')
-
-@fab.task
-@fab.parallel
-def stop_exp():
-    stop_react()
-    stop_react2()
-    iperf_stop_clients()
