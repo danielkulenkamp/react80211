@@ -51,8 +51,12 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
 
-def airtime(node_dir, col=2):
+def airtime(node_dir, col=2, ylim=None):
     plot_react_csv_data(node_dir, int(col))
+
+    if ylim is not None:
+        plt.ylim([0, ylim])
+
     plt.xlabel('Time')
     plt.ylabel('Airtime (%)')
     plt.title('Airtime vs. Time')
@@ -196,4 +200,5 @@ if __name__ == '__main__':
 
     assert(os.path.isdir(args.node_dir)) # bad node_dir argument?
 
-    fn_map[args.command](args.node_dir, *args.override)
+    override = dict(zip(args.override[::2], map(float, args.override[1::2])))
+    fn_map[args.command](args.node_dir, **override)
