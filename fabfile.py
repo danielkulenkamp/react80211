@@ -487,17 +487,22 @@ def exp_concept(enable_react):
 #    run_react(out_dir=host_out_dir, beta=beta, k=k)
 
 @fab.task
+@fab.parallel
 def exp_graph2():
+    import random
+
     host_out_dir = makeout('~/data/98_graph2')
-    print host_out_dir
 
-    for i in range(len(fab.env.hosts)):
-        cmd = 'ping -c 10 -I wlan0 192.168.0.{0} | tee {1}/192.168.0.{0}'
-        fab.run(cmd.format(i + 1, host_out_dir))
+    nodes = range(len(fab.env.hosts))
+    random.shuffle(nodes)
 
-    print
+    cmd = 'ping -c 100 -I wlan0 192.168.0.{0} > {1}/192.168.0.{0}'
+    for n in nodes:
+        with fab.settings(warn_only=True):
+            fab.run(cmd.format(n + 1, host_out_dir))
 
 @fab.task
-@fab.parallel
-def exp_graph_stop():
-    screen_stop_session('tcpdump')
+@fab.runs_once
+def yobooyathere():
+    for host in fab.env.hosts:
+        fab.run('host {}'.format(host))
