@@ -52,6 +52,10 @@ def plot_react_csv_data(node_dir, y_index):
         plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
 
 def airtime(node_dir, col=2, ylim=None):
+    col = int(col)
+    if ylim is not None:
+        ylim = float(ylim)
+
     plot_react_csv_data(node_dir, int(col))
 
     if ylim is not None:
@@ -116,7 +120,7 @@ def thr(node_dir):
     #    all_bytes_sent += np.sum(thr[:240])
     #print all_bytes_sent
 
-def graph(node_dir):
+def get_graphs(node_dir):
     # Create a dictionary that maps IP addresses to testbed node names
     ip_to_node = {}
     for path in glob('{}/zotac*/192.168.0.1'.format(node_dir)):
@@ -127,14 +131,14 @@ def graph(node_dir):
                 ip_to_node[line.split()[4]] = node
                 break
 
-    # Graph G has edges between all 100% transmission probability links
-    G = nx.DiGraph()
-    # Graph H has edges between all non-zero transmission probability links
-    H = nx.DiGraph()
+    # Graph G100 has edges between all 100% transmission probability links
+    G100 = nx.DiGraph()
+    # Graph Gall has edges between all non-zero transmission probability links
+    Gall = nx.DiGraph()
 
     # Add edges to graphs
     for path in glob('{}/zotac*/192.*'.format(node_dir)):
-        to_node = from_node = sent = recvd = None
+        to_node = from_node = packet_loss = None
 
         for line in open(path):
             parts = line.split()
@@ -144,34 +148,46 @@ def graph(node_dir):
                 to_node = ip_to_node[parts[1]]
                 from_node = ip_to_node[parts[4]]
 
-            if re.search('transmitted', line):
-                assert(sent is None and recvd is None)
-                sent = parts[0]
-                recvd = parts[3]
+            if re.search('packet loss', line):
+                for i in xrange(len(parts)):
+                    if parts[i] == 'packet':
+                        assert(packet_loss is None)
+                        assert(parts[i + 1] == 'loss,')
+                        packet_loss = float(parts[i - 1].strip('%'))
 
-        assert(to_node is not None and from_node is not None)
-        assert(sent is not None and recvd is not None)
-        transmission_prob = float(recvd)/float(sent)
-
+        transmission_prob = 1 - packet_loss
         if transmission_prob == 1.0:
-            G.add_edge(from_node, to_node)
+            G100.add_edge(from_node, to_node)
         if transmission_prob > 0.0:
-            H.add_edge(from_node, to_node)
+            Gall.add_edge(from_node, to_node)
 
-    # Find all paths of length equal to the diameter
-    diameter = nx.diameter(G)
+    return G100, Gall
+
+def find_paths(node_dir, length=1):
+    length = int(length)
+
+    G100, Gall = get_graphs(node_dir)
     paths = []
-    for n1 in G:
-        for n2 in G:
-            # Check if (high-quality) diameter length path(s) exist in G without
-            # there being a shorter (low-quality) path in H
-            if nx.shortest_path_length(G, n1, n2) == \
-                    nx.shortest_path_length(H, n1, n2) and \
-                    nx.shortest_path_length(G, n1, n2) == diameter:
-                for path in nx.all_shortest_paths(G, n1, n2):
-                    paths.append(path)
 
-    # Filter out uni-directional paths
+    # For each pair of nodes, check if the length of the shortest paths between
+    # these nodes in G100 is if of the target length. If it is, check that there
+    # is not a shorter path between the nodes in Gall. If there is not a shorter
+    # path then the shortest paths in G100 are "high-quality" paths. This is
+    # because each link in the path has a 100% transmission probability and
+    # there are no lower probability links that would form a shorter path
+    # between the pair of nodes.
+    for n1 in G100:
+        for n2 in G100:
+            try:
+                if nx.shortest_path_length(G100, n1, n2) == \
+                        nx.shortest_path_length(Gall, n1, n2) and \
+                        nx.shortest_path_length(G100, n1, n2) == length:
+                    for path in nx.all_shortest_paths(G100, n1, n2):
+                        paths.append(path)
+            except nx.NetworkXNoPath:
+                pass
+
+    # Filter out uni-directional paths and print bi-directional paths
     for i in range(len(paths)):
         if len(paths[i]) == 0:
             break
@@ -186,9 +202,16 @@ def graph(node_dir):
                     break
                 paths[j].reverse()
 
+def plot_network(node_dir):
+    G100, _ = get_graphs(node_dir)
+
+    nx.draw_networkx(G100)
+    plt.show()
+
 if __name__ == '__main__':
     fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence,
-            'throughput': thr, 'graph': graph }
+            'throughput': thr, 'find_paths': find_paths,
+            'plot_network': plot_network }
 
     p = argparse.ArgumentParser()
     p.add_argument('node_dir', help='data directory for specific trial')
@@ -200,5 +223,5 @@ if __name__ == '__main__':
 
     assert(os.path.isdir(args.node_dir)) # bad node_dir argument?
 
-    override = dict(zip(args.override[::2], map(float, args.override[1::2])))
+    override = dict(zip(args.override[::2], args.override[1::2]))
     fn_map[args.command](args.node_dir, **override)
