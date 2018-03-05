@@ -9,6 +9,8 @@ import os
 import argparse
 from glob import glob
 import re
+import itertools
+from distutils.util import strtobool
 
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
@@ -202,6 +204,33 @@ def find_paths(node_dir, length=1):
                     break
                 paths[j].reverse()
 
+def find_star(node_dir, plot=False):
+    if isinstance(plot, basestring):
+        plot = bool(strtobool(plot))
+
+    G100, Gall = get_graphs(node_dir)
+
+    def has_edge(G, n1, n2):
+        return G.has_edge(n1, n2) and G.has_edge(n2, n1)
+
+    for nodes in itertools.permutations(G100, 5):
+        star = True
+
+        # Check that each outside node only has an edge to the center node
+        for i in range(4):
+            if not(has_edge(G100, nodes[i], nodes[4])) or \
+                    has_edge(Gall, nodes[i], nodes[(i + 1) % 4]) or \
+                    has_edge(Gall, nodes[i], nodes[(i + 2) % 4]) or \
+                    has_edge(Gall, nodes[i], nodes[(i + 3) % 4]):
+                star = False
+                break
+
+        if star:
+            if plot:
+                nx.draw_networkx(G100.subgraph(nodes))
+                plt.show()
+            print nodes
+
 def plot_network(node_dir):
     G100, _ = get_graphs(node_dir)
 
@@ -210,7 +239,7 @@ def plot_network(node_dir):
 
 if __name__ == '__main__':
     fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence,
-            'throughput': thr, 'find_paths': find_paths,
+            'throughput': thr, 'find_paths': find_paths, 'find_star': find_star,
             'plot_network': plot_network }
 
     p = argparse.ArgumentParser()
