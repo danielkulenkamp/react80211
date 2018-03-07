@@ -12,6 +12,10 @@ import re
 import itertools
 from distutils.util import strtobool
 
+# UDP server report
+# timestamp      server      port client      port  ? interval   sent     band   jitter drop total %      out-of-order
+# 20180307070534,192.168.0.2,5001,192.168.0.1,36966,3,0.0-2274.2,42819630,150625,38.257,4987,34116,14.618,28
+
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []

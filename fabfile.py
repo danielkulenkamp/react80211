@@ -196,7 +196,12 @@ def screen_start_session(name, cmd):
 
 def screen_stop_session(name):
     with fab.settings(warn_only=True):
-        fab.run('screen -S {} -X quit'.format(name))
+        # Try to stop cleanly by sending SIGINT
+        fab.run('screen -S {} -p 0 -X stuff ""'.format(name))
+
+        # If that didn't work then just quit
+        if fab.run('screen -S {} -X select .'.format(name)).return_code == 0:
+            fab.run('screen -S {} -X quit'.format(name))
 
 def screen_list():
     return fab.run('ls /var/run/screen/S-$(whoami)').split()
@@ -232,7 +237,10 @@ def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
         cmd = 'iperf -c {}'.format(server)
         if not(tcp):
             cmd += ' -u -b {}'.format(rate)
-        cmd += ' -t -1 -i 1 -yC | tee {}/{}.csv'.format(host_out_dir, server)
+        cmd += ' -t -1 -i 1 -yC'
+
+        # SIGINT propagates along pipe, killing iperf, and thus tee even with -i
+        cmd += ' | tee -i {}/{}.csv'.format(host_out_dir, server)
 
         screen_start_session('iperf_client', cmd)
 
