@@ -43,21 +43,21 @@ class TunerBase(object):
 
 class TunerNew(TunerBase):
 
-    def __init__(self, iface, log_file, cw_init, k):
+    def __init__(self, iface, log_file, cw_init, beta, k):
         super(TunerNew, self).__init__(iface, log_file)
 
         self.k = k
+        self.beta = beta
         self.cw_prev = cw_init
         self.smooth = None
 
         self.set_cw(cw_init)
 
     def update_cw(self, alloc, airtime):
-        beta = 0.5
         if self.smooth is None:
             self.smooth = airtime
         else:
-            self.smooth = beta*airtime + (1.0 - beta)*self.smooth
+            self.smooth = self.beta*airtime + (1.0 - self.beta)*self.smooth
 
         cw = int((self.smooth - alloc)*self.k) + self.cw_prev
         cw = 0 if cw < 0 else cw
@@ -116,7 +116,7 @@ if __name__ == '__main__':
         # TODO: change this back to TunerBase??
         tuner = TunerOld('wlan0', sys.stdout, args.cw_initial)
     else:
-        tuner = TunerNew('wlan0', sys.stdout, args.cw_initial, args.k)
+        tuner = TunerNew('wlan0', sys.stdout, args.cw_initial, 0.5, args.k)
 
     ao = AirtimeObserver()
     while True:

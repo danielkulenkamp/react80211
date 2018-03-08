@@ -151,16 +151,15 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
 
     return [tslot, tx_time_theor, t_rts, t_ack]
 
-def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner):
+def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner,beta,k):
         global my_mac
         log_file = open(data_path, 'w')
         cw_initial = 0
-        k = 200.0
 
         if enable_react:
             assert(which_tuner == 'new' or which_tuner == 'old')
             if which_tuner == 'new':
-                tuner = TunerNew(iface, log_file, cw_initial, k)
+                tuner = TunerNew(iface, log_file, cw_initial, beta, k)
             elif which_tuner == 'old':
                 tuner = TunerOld(iface, log_file, cw_initial)
         else:
@@ -386,8 +385,8 @@ def usage(in_opt,ext_in_opt):
     print("input error: here optionlist: \n{0} --> {1}\n".format(in_opt,str(ext_in_opt)))
 
 def main():
-    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "output_path"];
-    in_opt="hi:t:r:e:o:"
+    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "output_path=", "beta=", "kay="];
+    in_opt="hi:t:r:e:o:b:k:"
     try:
         opts, args = getopt.getopt(sys.argv[1:], in_opt, ext_in_opt)
     except getopt.GetoptError as err:
@@ -445,6 +444,10 @@ def main():
             which_tuner = a
         if o  in ("-o", "--output_path"):
             data_path=str(a)
+        if o  in ("-b", "--beta"):
+            beta=float(a)
+        if o  in ("-k", "--kay"):
+            k=float(a)
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
@@ -465,7 +468,7 @@ def main():
         # thread update pkt statistics
         #thread.start_new_thread( get_ieee80211_stats,(iface, i_time) )
         #
-        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path,which_tuner))
+        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path,which_tuner,beta,k))
 
     except Exception, err:
         print err

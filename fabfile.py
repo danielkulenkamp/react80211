@@ -127,7 +127,7 @@ def stop_react2():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, tuner='new'):
+def run_react(out_dir=None, tuner='new', beta=None, k=None):
     args = []
 
     args.append('-i')
@@ -138,6 +138,16 @@ def run_react(out_dir=None, tuner='new'):
 
     args.append('-r')
     args.append('6000')
+
+    args.append('-b')
+    if beta is None:
+        beta = 0.5
+    args.append(str(beta))
+
+    args.append('-k')
+    if k is None:
+        k = 200.0
+    args.append(str(k))
 
     # Without a tuner REACT is disabled and we just collect airtime data
     if tuner == 'new' or tuner == 'old':
@@ -360,7 +370,7 @@ def stop_exp():
 
 @fab.task
 @fab.parallel
-def star(out_dir, use, tcp):
+def star(out_dir, use, tcp, beta, k):
     assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
     if isinstance(tcp, basestring):
         tcp = bool(strtobool(tcp))
@@ -369,7 +379,7 @@ def star(out_dir, use, tcp):
         'tcp' if tcp else 'udp'))
 
     if use != 'oldest':
-        run_react(host_out_dir, use)
+        run_react(host_out_dir, use, beta, k)
     else:
         run_react2(host_out_dir)
 
@@ -391,7 +401,7 @@ def exp_test():
     #        fab.execute(star, '~/data/test', use, tcp)
     #        time.sleep(120)
     #        fab.execute(stop_exp)
-    fab.execute(star, '~/data/test1', 'new', False)
+    fab.execute(star, '~/data/test1', 'new', False, 0.5, 200.0)
     time.sleep(120)
     fab.execute(stop_exp)
 
