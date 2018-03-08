@@ -19,18 +19,21 @@ from distutils.util import strtobool
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []
+    node_list = []
 
-    nodes = glob('{}/*'.format(node_dir))
+    node_dirs = glob('{}/*'.format(node_dir))
     paths = glob('{}/*/react.csv'.format(node_dir))
 
-    assert(len(nodes) == len(paths) and len(paths) != 0) # missing react.csv?
+    assert len(node_dirs) == len(paths) and len(paths) != 0, \
+            "Is there a missing react.csv file?"
 
     for i in xrange(len(paths)):
         path = paths[i]
         x_list.append(np.loadtxt(path, delimiter=',', usecols=(x_index,)))
         y_list.append(np.loadtxt(path, delimiter=',', usecols=(y_index,)))
+        node_list.append(path.split('/')[-2])
 
-    return x_list, y_list
+    return x_list, y_list, node_list
 
 def get_xlim(x_list):
     first = x_list[0][0]
@@ -46,7 +49,7 @@ def get_xlim(x_list):
     return first, last
 
 def plot_react_csv_data(node_dir, y_index):
-    x_list, y_list = load_react_csv_data(node_dir, 0, y_index)
+    x_list, y_list, node_list = load_react_csv_data(node_dir, 0, y_index)
 
     first, last = get_xlim(x_list)
     for x in x_list:
@@ -55,7 +58,7 @@ def plot_react_csv_data(node_dir, y_index):
     plt.xlim([0, last - first])
 
     for i in xrange(len(x_list)):
-        plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
+        plt.plot(x_list[i], y_list[i], label=node_list[i])
 
 def plot_react(node_dir, col='airtime', ylim=None):
     # Example react.csv row
@@ -87,7 +90,7 @@ def plot_react(node_dir, col='airtime', ylim=None):
     plt.show()
 
 def converge_time(node_dir, cv_threshold=0.10):
-    x_list, y_list = load_react_csv_data(node_dir, 0, 4)
+    x_list, y_list, _ = load_react_csv_data(node_dir, 0, 4)
     first, _ = get_xlim(x_list)
 
     # all y should start at same x and be same length
