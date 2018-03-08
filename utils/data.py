@@ -57,27 +57,32 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label='Node {}'.format(i))
 
-def airtime(node_dir, col=2, ylim=None):
-    col = int(col)
+def plot_react(node_dir, col='airtime', ylim=None):
+    # Example react.csv row
+    # 1520532965.14935,0.16000,0.20536,352,356
+
+    if col == 'alloc':
+        col, name, unit = (1, 'Airtime Allocation', '%')
+    elif col == 'airtime':
+        col, name, unit = (2, 'Airtime', '%')
+    elif col == 'prev':
+        col, name, unit = (3, 'Previous CW Size', '')
+    elif col == 'next':
+        col, name, unit = (4, 'Next CW Size', '')
+    else:
+        assert False, 'Not a valid react.csv column'
+
     if ylim is not None:
         ylim = float(ylim)
 
-    plot_react_csv_data(node_dir, int(col))
+    plot_react_csv_data(node_dir, col)
 
     if ylim is not None:
         plt.ylim([0, ylim])
 
     plt.xlabel('Time')
-    plt.ylabel('Airtime (%)')
-    plt.title('Airtime vs. Time')
-    plt.legend()
-    plt.show()
-
-def ct(node_dir):
-    plot_react_csv_data(node_dir, 4)
-    plt.xlabel('Time')
-    plt.ylabel('CT')
-    plt.title('Contention Time (CT) vs. Time')
+    plt.ylabel('{} ({})'.format(name, unit))
+    plt.title('{} vs. Time'.format(name))
     plt.legend()
     plt.show()
 
@@ -257,7 +262,7 @@ def plot_network(node_dir):
     plt.show()
 
 if __name__ == '__main__':
-    fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence,
+    fn_map = { 'plot_react': plot_react, 'convergence': convergence,
             'throughput': thr, 'get_graphs': get_graphs,
             'find_paths': find_paths, 'find_star': find_star,
             'plot_network': plot_network }
