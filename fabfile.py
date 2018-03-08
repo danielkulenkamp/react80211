@@ -150,8 +150,8 @@ def run_react(out_dir=None, tuner='new'):
     args.append('{}/react.csv'.format(out_dir))
 
     stop_react()
-    fab.sudo('setsid {}/_react.py {} &>~/react.out </dev/null &'.format(
-        project_path, ' '.join(args)), pty=False)
+    fab.sudo('setsid {}/_react.py {} &>~/react.{}.out </dev/null &'.format(
+        project_path, ' '.join(args), fab.env.host), pty=False)
 
 @fab.task
 @fab.parallel
@@ -176,8 +176,8 @@ def run_react2(out_dir=None, enable_react=True):
     args.append(out_dir)
 
     stop_react2()
-    fab.sudo('setsid {}/react.py {} &>~/react.out </dev/null &'.format(
-        project_path, ' '.join(args)), pty=False)
+    fab.sudo('setsid {}/react.py {} &>~/react.{}.out </dev/null &'.format(
+        project_path, ' '.join(args), fab.env.host), pty=False)
 
 ################################################################################
 # time
