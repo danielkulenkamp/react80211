@@ -510,7 +510,6 @@ def exp_graph2():
             fab.run(cmd.format(n + 1, host_out_dir))
 
 @fab.task
-@fab.runs_once
+@fab.parallel
 def yobooyathere():
-    for host in fab.env.hosts:
-        fab.run('host {}'.format(host))
+    fab.run(':')
