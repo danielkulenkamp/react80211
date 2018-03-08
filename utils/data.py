@@ -126,7 +126,10 @@ def thr(node_dir):
     #    all_bytes_sent += np.sum(thr[:240])
     #print all_bytes_sent
 
-def get_graphs(node_dir):
+def get_graphs(node_dir, plot=False):
+    if isinstance(plot, basestring):
+        plot = bool(strtobool(plot))
+
     # Create a dictionary that maps IP addresses to testbed node names
     ip_to_node = {}
     for path in glob('{}/zotac*/192.168.0.1'.format(node_dir)):
@@ -159,13 +162,25 @@ def get_graphs(node_dir):
                     if parts[i] == 'packet':
                         assert(packet_loss is None)
                         assert(parts[i + 1] == 'loss,')
-                        packet_loss = float(parts[i - 1].strip('%'))
+                        packet_loss = float(parts[i - 1].strip('%'))/100.0
 
+        assert(to_node is not None and from_node is not None and
+                packet_loss is not None)
+        assert(not(packet_loss < 0.0) and not(packet_loss > 1.0))
         transmission_prob = 1 - packet_loss
         if transmission_prob == 1.0:
             G100.add_edge(from_node, to_node)
         if transmission_prob > 0.0:
             Gall.add_edge(from_node, to_node)
+
+    # Sanity check, all edges in G100 should be in Gall
+    for n1, n2 in G100.edges():
+        assert(Gall.has_edge(n1, n2))
+
+    if plot:
+        for g in [G100, Gall]:
+            nx.draw_networkx(g)
+            plt.show()
 
     return G100, Gall
 
@@ -243,7 +258,8 @@ def plot_network(node_dir):
 
 if __name__ == '__main__':
     fn_map = { 'airtime': airtime, 'ct': ct, 'convergence': convergence,
-            'throughput': thr, 'find_paths': find_paths, 'find_star': find_star,
+            'throughput': thr, 'get_graphs': get_graphs,
+            'find_paths': find_paths, 'find_star': find_star,
             'plot_network': plot_network }
 
     p = argparse.ArgumentParser()
