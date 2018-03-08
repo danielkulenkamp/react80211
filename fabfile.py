@@ -360,13 +360,40 @@ def stop_exp():
 
 @fab.task
 @fab.parallel
-def exp_test():
-    host_out_dir = makeout()
+def star(out_dir, use, tcp):
+    assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
+    if isinstance(tcp, basestring):
+        tcp = bool(strtobool(tcp))
+
+    host_out_dir = makeout(out_dir, '{}-{}'.format(use,
+        'tcp' if tcp else 'udp'))
+
+    if use != 'oldest':
+        run_react(host_out_dir, use)
+    else:
+        run_react2(host_out_dir)
+
+    time.sleep(1)
 
     cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm, tcp=True)
+    cm.add('192.168.0.1', r'192.168.0.5')
+    cm.add('192.168.0.2', r'192.168.0.5')
+    cm.add('192.168.0.3', r'192.168.0.5')
+    cm.add('192.168.0.4', r'192.168.0.5')
+    cm.add('192.168.0.5', r'NONE')
+    iperf_start_clients(host_out_dir, cm, tcp)
+
+@fab.task
+@fab.runs_once
+def exp_test():
+    #for use in ['dot', 'new']:
+    #    for tcp in ['true', 'false']:
+    #        fab.execute(star, '~/data/test', use, tcp)
+    #        time.sleep(120)
+    #        fab.execute(stop_exp)
+    fab.execute(star, '~/data/test1', 'new', False)
+    time.sleep(120)
+    fab.execute(stop_exp)
 
 @fab.task
 @fab.parallel
