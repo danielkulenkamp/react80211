@@ -366,25 +366,9 @@ def stop_exp():
     iperf_stop_clients()
 
 ################################################################################
-# exps
+# topos
 
-@fab.task
-@fab.parallel
-def star(out_dir, use, tcp, beta, k):
-    assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
-    if isinstance(tcp, basestring):
-        tcp = bool(strtobool(tcp))
-
-    host_out_dir = makeout(out_dir, '{}-{}'.format(use,
-        'tcp' if tcp else 'udp'))
-
-    if use != 'oldest':
-        run_react(host_out_dir, use, beta, k)
-    else:
-        run_react2(host_out_dir)
-
-    time.sleep(1)
-
+def star(host_out_dir, tcp):
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.5')
     cm.add('192.168.0.2', r'192.168.0.5')
@@ -393,17 +377,31 @@ def star(out_dir, use, tcp, beta, k):
     cm.add('192.168.0.5', r'NONE')
     iperf_start_clients(host_out_dir, cm, tcp)
 
+################################################################################
+# exps
+
 @fab.task
 @fab.runs_once
-def exp_test():
-    #for use in ['dot', 'new']:
-    #    for tcp in ['true', 'false']:
-    #        fab.execute(star, '~/data/test', use, tcp)
-    #        time.sleep(120)
-    #        fab.execute(stop_exp)
-    fab.execute(star, '~/data/test1', 'new', False, 0.5, 200.0)
-    time.sleep(120)
-    fab.execute(stop_exp)
+def exp_betak():
+
+    @fab.task
+    @fab.parallel
+    def betak(out_dir, beta, k):
+        host_out_dir = makeout(out_dir, '{:03}-{:04}'.format(int(beta*100), k))
+
+        run_react(host_out_dir, 'new', beta, k)
+
+        time.sleep(1)
+
+        star(host_out_dir, False)
+
+    betas = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+    for beta in betas:
+        for k in range(250, 3250, 250):
+            fab.execute(betak, '~/data/97_betak', beta, k)
+            time.sleep(15)
+            fab.execute(stop_exp)
 
 @fab.task
 @fab.parallel

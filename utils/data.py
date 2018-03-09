@@ -89,8 +89,8 @@ def plot_react(node_dir, col='airtime', ylim=None):
     plt.legend()
     plt.show()
 
-def converge_time(node_dir, cv_threshold=0.10):
-    x_list, y_list, _ = load_react_csv_data(node_dir, 0, 4)
+def converge_time(node_dir, cv_threshold):
+    x_list, y_list, _ = load_react_csv_data(node_dir, 0, 2)
     first, _ = get_xlim(x_list)
 
     # all y should start at same x and be same length
@@ -118,8 +118,47 @@ def converge_time(node_dir, cv_threshold=0.10):
     # does not converge
     return x_list[0][-1] - first
 
-def convergence(node_dir):
-    print converge_time(node_dir)
+def convergence(node_dir, threshold=0.1):
+    threshold = float(threshold)
+    print converge_time(node_dir, threshold)
+
+def heatmap(out_dir, threshold=0.1):
+    threshold = float(threshold)
+
+    beta_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    k_list = range(250, 3250, 250)
+
+    low = (None, None, None)
+    a = []
+    for i in xrange(len(beta_list)):
+        beta = beta_list[i]
+
+        row = []
+        for k in k_list:
+            node_dir = '{}/{:03}-{:04}'.format(out_dir, int(beta*100), k)
+            ct = converge_time(node_dir, threshold)
+
+            if low[0] is None or ct < low[0]:
+                low = (ct, beta, k)
+
+            row.append(ct)
+
+        print row
+        a.append(row)
+
+    print low
+
+    _, ax = plt.subplots()
+    ax.set_xticks(range(len(k_list)))
+    ax.set_yticks(range(len(beta_list)))
+    ax.set_xticklabels(k_list)
+    ax.set_yticklabels(beta_list)
+
+    plt.xlabel('k')
+    plt.ylabel('BETA')
+    plt.title('Convergence Varying BETA/k\n(Darker is faster)')
+    plt.imshow(a, cmap='hot', interpolation='nearest')
+    plt.show()
 
 def thr(node_dir):
     i = 1
@@ -264,21 +303,28 @@ def plot_network(node_dir):
     nx.draw_networkx(G100)
     plt.show()
 
+
 if __name__ == '__main__':
-    fn_map = { 'plot_react': plot_react, 'convergence': convergence,
-            'throughput': thr, 'get_graphs': get_graphs,
-            'find_paths': find_paths, 'find_star': find_star,
-            'plot_network': plot_network }
+    fn_map = {
+        'plot_react': plot_react,
+        'convergence': convergence,
+        'throughput': thr,
+        'get_graphs': get_graphs,
+        'find_paths': find_paths,
+        'find_star': find_star,
+        'plot_network': plot_network,
+        'heatmap': heatmap
+    }
 
     p = argparse.ArgumentParser()
-    p.add_argument('node_dir', help='data directory for specific trial')
+    p.add_argument('dir', help='data directory for specific trial')
     p.add_argument('command', choices=fn_map,
             help='data processing sub-command')
     p.add_argument('override', nargs='*',
             help='override functions default arguments')
     args = p.parse_args()
 
-    assert(os.path.isdir(args.node_dir)) # bad node_dir argument?
+    assert os.path.isdir(args.dir), "Bad dir argument?"
 
     override = dict(zip(args.override[::2], args.override[1::2]))
-    fn_map[args.command](args.node_dir, **override)
+    fn_map[args.command](args.dir, **override)
