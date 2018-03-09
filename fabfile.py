@@ -368,40 +368,75 @@ def stop_exp():
 ################################################################################
 # topos
 
-def star(host_out_dir, tcp):
+def topo(name, host_out_dir, tcp):
     cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.5')
-    cm.add('192.168.0.2', r'192.168.0.5')
-    cm.add('192.168.0.3', r'192.168.0.5')
-    cm.add('192.168.0.4', r'192.168.0.5')
-    cm.add('192.168.0.5', r'NONE')
-    iperf_start_clients(host_out_dir, cm, tcp)
+
+    if name == 'star':
+        cm.add('192.168.0.1', r'192.168.0.5')
+        cm.add('192.168.0.2', r'192.168.0.5')
+        cm.add('192.168.0.3', r'192.168.0.5')
+        cm.add('192.168.0.4', r'192.168.0.5')
+        cm.add('192.168.0.5', r'NONE')
+    elif name == '3hop':
+        cm.add('192.168.0.1', r'192.168.0.2')
+        cm.add('192.168.0.2', r'192.168.0.3')
+        cm.add('192.168.0.3', r'192.168.0.2')
+        cm.add('192.168.0.4', r'192.168.0.3')
+    else:
+        assert False, 'Topo does not exist right now mate'
+
+    iperf_start_clients(host_out_dir, cm, tcp=False)
 
 ################################################################################
 # exps
 
 @fab.task
 @fab.runs_once
-def exp_betak():
+def exp_betak(name):
+    assert name == 'star' or name == '3hop'
 
     @fab.task
     @fab.parallel
-    def betak(out_dir, beta, k):
+    def betak(out_dir, name, beta, k):
         host_out_dir = makeout(out_dir, '{:03}-{:04}'.format(int(beta*100), k))
 
         run_react(host_out_dir, 'new', beta, k)
 
         time.sleep(1)
 
-        star(host_out_dir, False)
+        topo(name, host_out_dir, False)
 
     betas = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
     for beta in betas:
         for k in range(250, 3250, 250):
-            fab.execute(betak, '~/data/97_betak', beta, k)
+            fab.execute(betak, '~/data/97_betak/{}'.format(name), name, beta, k)
             time.sleep(15)
             fab.execute(stop_exp)
+
+@fab.task
+@fab.runs_once
+def exp_test():
+
+    @fab.task
+    @fab.parallel
+    def yolo():
+        host_out_dir = makeout('~/data/test3')
+
+        run_react(host_out_dir)
+
+        time.sleep(1)
+
+        cm = ConnMatrix()
+        cm.add('192.168.0.1', r'192.168.0.2')
+        cm.add('192.168.0.2', r'192.168.0.3')
+        cm.add('192.168.0.3', r'192.168.0.2')
+        cm.add('192.168.0.4', r'192.168.0.3')
+        iperf_start_clients(host_out_dir, cm, tcp=False)
+
+    fab.execute(yolo)
+    time.sleep(120)
+    fab.execute(stop_exp)
 
 @fab.task
 @fab.parallel
