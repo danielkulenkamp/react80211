@@ -60,7 +60,7 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label=node_list[i])
 
-def plot_react(node_dir, col='airtime', ylim=None):
+def plot_react(node_dir, col='airtime', ylim=1.0):
     # Example react.csv row
     # 1520532965.14935,0.16000,0.20536,352,356
 
@@ -75,7 +75,7 @@ def plot_react(node_dir, col='airtime', ylim=None):
     else:
         assert False, 'Not a valid react.csv column'
 
-    if ylim is not None:
+    if isinstance(ylim, basestring):
         ylim = float(ylim)
 
     plot_react_csv_data(node_dir, col)
@@ -123,9 +123,10 @@ def convergence(node_dir, threshold=0.1):
     print converge_time(node_dir, threshold)
 
 def heatmap(out_dir, threshold=0.1):
+    print out_dir
     threshold = float(threshold)
 
-    beta_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    beta_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
     k_list = range(250, 3250, 250)
 
     low = (None, None, None)
