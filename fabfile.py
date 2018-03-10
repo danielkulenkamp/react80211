@@ -382,6 +382,11 @@ def topo(tname, host_out_dir, tcp):
         cm.add('192.168.0.2', r'192.168.0.3')
         cm.add('192.168.0.3', r'192.168.0.2')
         cm.add('192.168.0.4', r'192.168.0.3')
+    elif tname == 'bae':
+        cm.add('192.168.0.1', r'192.168.0.2')
+        cm.add('192.168.0.2', r'192.168.0.3')
+        cm.add('192.168.0.3', r'192.168.0.4')
+        cm.add('192.168.0.4', r'192.168.0.1')
     else:
         assert False, 'Topo does not exist right now mate'
 
@@ -393,7 +398,7 @@ def topo(tname, host_out_dir, tcp):
 @fab.task
 @fab.runs_once
 def exp_betak(tname):
-    assert tname == 'star' or tname == '3hop'
+    assert tname == 'star' or tname == '3hop' or tname == 'bae'
 
     @fab.task
     @fab.parallel
@@ -433,7 +438,7 @@ def exp_comp(tname):
 
         topo(tname, host_out_dir, False)
 
-    for use in  ["dot", "new", "old"]:
+    for use in  ['dot', 'new', 'old', 'oldest']:
         fab.execute(comp, "~/data/96_comp/{}".format(tname), tname, use)
         time.sleep(120)
         fab.execute(stop_exp)
