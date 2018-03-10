@@ -174,9 +174,7 @@ def thr(node_dir):
     #    all_bytes_sent += np.sum(thr[:240])
     #print all_bytes_sent
 
-def get_graphs(node_dir, plot=False):
-    if isinstance(plot, basestring):
-        plot = bool(strtobool(plot))
+def get_graphs(node_dir):
 
     # Create a dictionary that maps IP addresses to testbed node names
     ip_to_node = {}
@@ -225,12 +223,14 @@ def get_graphs(node_dir, plot=False):
     for n1, n2 in G100.edges():
         assert(Gall.has_edge(n1, n2))
 
-    if plot:
-        for g in [G100, Gall]:
-            nx.draw_networkx(g)
-            plt.show()
-
     return G100, Gall
+
+def net_graph(node_dir):
+    G100, Gall = get_graphs(node_dir)
+
+    for g in [G100, Gall]:
+        nx.draw_networkx(g)
+        plt.show()
 
 def find_paths(node_dir, length=1):
     length = int(length)
@@ -310,7 +310,7 @@ if __name__ == '__main__':
         'plot_react': plot_react,
         'convergence': convergence,
         'throughput': thr,
-        'get_graphs': get_graphs,
+        'net_graph': net_graph,
         'find_paths': find_paths,
         'find_star': find_star,
         'plot_network': plot_network,
