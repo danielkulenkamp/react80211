@@ -12,10 +12,6 @@ import re
 import itertools
 from distutils.util import strtobool
 
-# UDP server report
-# timestamp      server      port client      port  ? interval   sent     band   jitter drop total %      out-of-order
-# 20180307070534,192.168.0.2,5001,192.168.0.1,36966,3,0.0-2274.2,42819630,150625,38.257,4987,34116,14.618,28
-
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []
@@ -60,7 +56,7 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label=node_list[i])
 
-def plot_react(node_dir, col='airtime', ylim=1.0):
+def plot_react(node_dir, col='airtime', ylim=1.0, save=None, title=None):
     # Example react.csv row
     # 1520532965.14935,0.16000,0.20536,352,356
 
@@ -83,11 +79,21 @@ def plot_react(node_dir, col='airtime', ylim=1.0):
     if ylim is not None:
         plt.ylim([0, ylim])
 
+    if title is None:
+        title = ''
+    else:
+        title += ': '
+    title += '{} vs. Time'.format(name)
+
     plt.xlabel('Time')
     plt.ylabel('{} ({})'.format(name, unit))
-    plt.title('{} vs. Time'.format(name))
+    plt.title(title)
     plt.legend()
-    plt.show()
+
+    if save is None:
+        plt.show()
+    else:
+        plt.savefig(save)
 
 def converge_time(node_dir, cv_threshold):
     x_list, y_list, _ = load_react_csv_data(node_dir, 0, 2)
@@ -161,18 +167,49 @@ def heatmap(out_dir, threshold=0.1):
     plt.imshow(a, cmap='hot', interpolation='nearest')
     plt.show()
 
-def thr(node_dir):
-    i = 1
-    for path in glob('{}/zotac*/192.*.csv'.format(node_dir)):
-        thr = np.loadtxt(path, delimiter=',', usecols=(8,))/1000000
-        print "{:02}\t{:.5f}\t{:.5f}".format(i, np.mean(thr), np.std(thr))
-        i += 1
+def thr(path):
+    throughput = None
 
-    #all_bytes_sent = 0
-    #for path in glob('{}/zotac*/192.*.csv'.format(node_dir)):
-    #    thr = np.loadtxt(path, delimiter=',', usecols=(7,))
-    #    all_bytes_sent += np.sum(thr[:240])
-    #print all_bytes_sent
+    for line in open(path):
+        parts = line.split(',')
+        start, end = map(float, parts[6].split('-'))
+
+        if start == 0.0 and end > 1.0:
+            assert throughput is None, 'Already parsed throughput'
+            throughput = float(parts[7])*8.0/end
+            break
+
+    assert throughput is not None, 'Did not parse throughput'
+    return throughput
+
+def plot_thr(trial_dir, proto='tcp', plot=True):
+    def get_path(trial_dir, alg, proto):
+        expand = '{}/{}-{}/zotac*/192.*.csv'.format(trial_dir, alg, proto)
+        paths = glob(expand)
+        assert len(paths) > 0, 'No path: ' + expand
+        assert len(paths) == 1, 'More than one path: ' + expand
+        return paths[0]
+
+    dot_path = get_path(trial_dir, 'dot', proto)
+    new_path = get_path(trial_dir, 'new', proto)
+
+    throughput = []
+    for path in [dot_path, new_path]:
+        throughput.append(thr(path))
+
+    # Convert to mbps
+    throughput = map(lambda bps: bps/1000.0/1000.0, throughput)
+    print throughput
+
+    objects = ('802.11', 'New Tuning')
+    y_pos = np.arange(len(objects))
+
+    plt.bar(y_pos, throughput, align='center', alpha=0.5)
+    plt.xticks(y_pos, objects)
+    plt.ylabel('Throughput (mbps)')
+    plt.title('Throughput: 802.11 vs New Tuning')
+
+    plt.show()
 
 def get_graphs(node_dir):
 
@@ -304,28 +341,219 @@ def plot_network(node_dir):
     nx.draw_networkx(G100)
     plt.show()
 
+# UDP server report indexes:
+# --------------------------
+# 00 timestap 20180307070534
+# 01 server 192.168.0.2
+# 02 port 5001
+# 03 client 192.168.0.1
+# 04 client port 36966
+# 05 ? 3
+# 06 interval 0.0-2274.2
+# 07 bytes sent 42819630
+# 08 bit/s 150625
+# 09 jitter 38.257
+# 10 dropped 4987
+# 11 total 34116
+# 12 % dropped 14.618
+# 13 out of order 28
+def get_server_report(node_dir, nodes, index):
+    data = []
+
+    # We requrie nodes list to order data
+    for node in nodes:
+        paths = glob('{}/{}/192.*.csv'.format(node_dir, node))
+        assert len(paths) == 1, ' '.join(paths)
+        path = paths[0]
+
+        for line in open(path):
+            parts = line.split(',')
+
+            if len(parts) == 14:
+                data.append(float(parts[index]))
+                break
+
+    return data
+
+def comp_barchart(data, nodes, ylabel, yunits):
+    fig, ax = plt.subplots()
+    index = np.arange(len(nodes))
+    bar_width = 0.25
+    opacity = 0.8
+
+    rects1 = plt.bar(index, data[0], bar_width,
+                     alpha=opacity,
+                     color='b',
+                     label='802.11')
+
+    rects2 = plt.bar(index + bar_width, data[1], bar_width,
+                     alpha=opacity,
+                     color='g',
+                     label='Old Tuning')
+
+    rects2 = plt.bar(index + 2*bar_width, data[2], bar_width,
+                     alpha=opacity,
+                     color='r',
+                     label='New Tuning')
+
+    plt.xlabel('Node')
+    plt.ylabel('{} ({})'.format(ylabel, yunits))
+    plt.title(ylabel + ' by Node')
+    plt.xticks(index + bar_width, nodes)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def comp_setup():
+    ### star
+    nodes = ['zotacB2', 'zotacF1', 'zotacF4', 'zotacI4']
+    dot_dir = '/home/mattm/ms/data/96_comp/star/003/dot'
+    old_dir = '/home/mattm/ms/data/96_comp/star/003/old'
+    new_dir = '/home/mattm/ms/data/96_comp/star/003/new'
+    ### 3hop
+    #nodes = ['zotacB2', 'zotacF3', 'zotacI4', 'zotacM20']
+    #dot_dir = '/home/mattm/ms/data/96_comp/3hop/007/dot'
+    #old_dir = '/home/mattm/ms/data/96_comp/3hop/007/old'
+    #new_dir = '/home/mattm/ms/data/96_comp/3hop/007/new'
+    ### bae
+    #nodes = ['zotacK1', 'zotacK2', 'zotacK3', 'zotacK4']
+    #dot_dir = '/home/mattm/ms/data/96_comp/bae/001/dot'
+    #old_dir = '/home/mattm/ms/data/96_comp/bae/001/old'
+    #new_dir = '/home/mattm/ms/data/96_comp/bae/001/new'
+
+    return nodes, dot_dir, old_dir, new_dir
+
+def comp_thr(unused):
+    nodes, dot_dir, old_dir, new_dir = comp_setup()
+
+    def kbps(x):
+        return x/1000.0
+
+    dot_thr = map(kbps, get_server_report(dot_dir, nodes, 8))
+    old_thr = map(kbps, get_server_report(old_dir, nodes, 8))
+    new_thr = map(kbps, get_server_report(new_dir, nodes, 8))
+
+    print dot_thr
+    print old_thr
+    print new_thr
+
+    comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Throughput', 'kbps')
+
+def comp_aggthr(unused):
+    nodes, dot_dir, old_dir, new_dir = comp_setup()
+
+    def kb(x):
+        return x/(1024.0 * 1024.0)
+
+    dot_thr = map(kb, get_server_report(dot_dir, nodes, 7))
+    old_thr = map(kb, get_server_report(old_dir, nodes, 7))
+    new_thr = map(kb, get_server_report(new_dir, nodes, 7))
+
+    print dot_thr
+    print old_thr
+    print new_thr
+
+    agg = [sum(dot_thr), sum(old_thr), sum(new_thr)]
+    print agg
+
+    objects = ('802.11', 'Old Tuning', 'New Tuning')
+    y_pos = np.arange(len(objects))
+
+    plt.bar(y_pos, agg, align='center', alpha=0.5)
+    plt.xticks(y_pos, objects)
+    plt.ylabel('Aggregate Throughput (MiB)')
+    plt.title('Aggregate Throughput by MAC Implementation')
+
+    plt.show()
+
+def comp_jitter(unused):
+    nodes, dot_dir, old_dir, new_dir = comp_setup()
+
+    dot_thr = get_server_report(dot_dir, nodes, 9)
+    old_thr = get_server_report(old_dir, nodes, 9)
+    new_thr = get_server_report(new_dir, nodes, 9)
+
+    print dot_thr
+    print old_thr
+    print new_thr
+
+    comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Jitter', 'ms')
+
+def comp_drop(unused):
+    nodes, dot_dir, old_dir, new_dir = comp_setup()
+
+    dot_thr = get_server_report(dot_dir, nodes, 12)
+    old_thr = get_server_report(old_dir, nodes, 12)
+    new_thr = get_server_report(new_dir, nodes, 12)
+
+    print dot_thr
+    print old_thr
+    print new_thr
+
+    comp_barchart([dot_thr, new_thr, old_thr], nodes, 'Drop Rate', '%')
 
 if __name__ == '__main__':
     fn_map = {
         'plot_react': plot_react,
         'convergence': convergence,
-        'throughput': thr,
+        'plot_thr': plot_thr,
         'net_graph': net_graph,
         'find_paths': find_paths,
         'find_star': find_star,
         'plot_network': plot_network,
-        'heatmap': heatmap
+        'heatmap': heatmap,
+        'comp_thr': comp_thr,
+        'comp_aggthr': comp_aggthr,
+        'comp_jitter': comp_jitter,
+        'comp_drop': comp_drop
     }
 
-    p = argparse.ArgumentParser()
-    p.add_argument('dir', help='data directory for specific trial')
-    p.add_argument('command', choices=fn_map,
-            help='data processing sub-command')
-    p.add_argument('override', nargs='*',
-            help='override functions default arguments')
-    args = p.parse_args()
+    dirs = []
+    fn_name = ""
+    override = {}
 
-    assert os.path.isdir(args.dir), "Bad dir argument?"
+    # Custom argument parsing
+    try:
+        assert len(sys.argv) >= 3, 'Not enough arguments'
 
-    override = dict(zip(args.override[::2], args.override[1::2]))
-    fn_map[args.command](args.dir, **override)
+        dirs = []
+        for i in xrange(1, len(sys.argv)):
+            arg = sys.argv[i]
+
+            if arg == '--':
+                break
+
+            assert os.path.isdir(arg), '{} is not a directory'.format(arg)
+            dirs.append(arg)
+
+        assert len(dirs) > 0, 'No DIR argument specified'
+
+        fn_name = sys.argv[i + 1]
+        assert fn_name in fn_map, 'Bad function name: {}'.format(fn_name)
+
+        for j in xrange(i + 2, len(sys.argv)):
+            arg = sys.argv[j]
+            parts = arg.split('=')
+
+            assert len(parts) == 1 or len(parts) == 2, \
+                    'Bad override: {}'.format(arg)
+            key = parts[0]
+            if len(parts) == 1:
+                value = True
+            else:
+                value = parts[1]
+
+            override[key] = value
+    except AssertionError as e:
+        print 'Error: ' + e.message
+        print 'Usage: data.py DIR [DIR...] -- FUNCTION [override[=value]' \
+                ' [override[=value]...]]'
+        print
+        print 'Functions:'
+        print '    ' + '\n    '.join(fn_map.keys())
+        exit()
+
+    for d in dirs:
+        print d
+        fn_map[fn_name](d, **override)
