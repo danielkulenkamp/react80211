@@ -141,12 +141,12 @@ def run_react(out_dir=None, tuner='new', beta=None, k=None):
 
     args.append('-b')
     if beta is None:
-        beta = 0.5
+        beta = 0.6
     args.append(str(beta))
 
     args.append('-k')
     if k is None:
-        k = 200.0
+        k = 500
     args.append(str(k))
 
     # Without a tuner REACT is disabled and we just collect airtime data
