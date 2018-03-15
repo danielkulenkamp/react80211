@@ -204,13 +204,11 @@ def time_sync():
 def screen_start_session(name, cmd):
     fab.run('screen -S {} -dm bash -c "{}"'.format(name, cmd), pty=False)
 
-def screen_stop_session(name):
+def screen_stop_session(name, interrupt=False):
     with fab.settings(warn_only=True):
-        # Try to stop cleanly by sending SIGINT
-        fab.run('screen -S {} -p 0 -X stuff ""'.format(name))
-
-        # If that didn't work then just quit
-        if fab.run('screen -S {} -X select .'.format(name)).return_code == 0:
+        if interrupt:
+            fab.run('screen -S {} -p 0 -X stuff ""'.format(name))
+        else:
             fab.run('screen -S {} -X quit'.format(name))
 
 def screen_list():
@@ -256,7 +254,7 @@ def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
 
 @fab.task
 def iperf_stop_clients():
-    screen_stop_session('iperf_client')
+    screen_stop_session('iperf_client', interrupt=True)
 
 ################################################################################
 # Multi-hop MAC address setup
