@@ -151,7 +151,7 @@ def txtime_theor(v80211,bitrate,bw,pkt_size):
 
     return [tslot, tx_time_theor, t_rts, t_ack]
 
-def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner,beta,k):
+def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner,beta,k,prealloc):
         global my_mac
         log_file = open(data_path, 'w')
         cw_initial = 0
@@ -171,7 +171,7 @@ def update_cw(iface,i_time,enable_react,sleep_time,data_path,which_tuner,beta,k)
             airtime = ao.airtime()
 
             alloc = float(CLAIM_CAPACITY)*float(neigh_list[my_mac]['claim'])
-            tuner.update_cw(alloc, airtime)
+            tuner.update_cw(alloc + prealloc, airtime)
 
 """
 Set CW
@@ -385,8 +385,8 @@ def usage(in_opt,ext_in_opt):
     print("input error: here optionlist: \n{0} --> {1}\n".format(in_opt,str(ext_in_opt)))
 
 def main():
-    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "output_path=", "beta=", "kay="];
-    in_opt="hi:t:r:e:o:b:k:"
+    ext_in_opt=["help", "iface=","tdelay=", "iperf_rate=", "enable_react=", "output_path=", "beta=", "kay=", "capacity=", "prealloc="];
+    in_opt="hi:t:r:e:o:b:k:c:p:"
     try:
         opts, args = getopt.getopt(sys.argv[1:], in_opt, ext_in_opt)
     except getopt.GetoptError as err:
@@ -432,6 +432,7 @@ def main():
     rts_success=$(( ${arr_stats_stop[3]} - ${arr_stats_start[3]} )) \n \
     '
 
+    global CLAIM_CAPACITY
     for o, a in opts:
         if o in ("-i", "--iface"):
             iface = a
@@ -448,6 +449,10 @@ def main():
             beta=float(a)
         if o  in ("-k", "--kay"):
             k=float(a)
+        if o  in ("-c", "--capacity"):
+            CLAIM_CAPACITY=float(a)
+        if o  in ("-p", "--prealloc"):
+            prealloc=float(a)
         elif o in ("-h", "--help"):
             usage()
             sys.exit()
@@ -468,7 +473,7 @@ def main():
         # thread update pkt statistics
         #thread.start_new_thread( get_ieee80211_stats,(iface, i_time) )
         #
-        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path,which_tuner,beta,k))
+        thread.start_new_thread(update_cw,(iface,i_time,enable_react,1,data_path,which_tuner,beta,k,prealloc))
 
     except Exception, err:
         print err

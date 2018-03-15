@@ -1,49 +1,23 @@
-#! /usr/bin/env python2
-'''Utilities for performing REACT80211 experimets.
-Requires Python 2.X for Fabric.
-Author: Fabrizio Giuliano
-'''
+#!/usr/bin/env python2
 
-###
-# my includes
-from helpers.conn_matrix import ConnMatrix
-
-from distutils.util import strtobool
 import time
-###
-
 import os
-import os.path
-import re
-import sys
-#import scapy.all as scapy
-
-
-
-from StringIO import StringIO
-from fabric.api import get
-
-
-import fabric
-import fabric.api as fab
-from fabric.api import hide, run, get
-import fabric.utils
+import random
+from distutils.util import strtobool
 import json
-hosts_driver=[];
-hosts_txpower=[]
-neigh_list=[]
-#verbosity
-#fabric.state.output['running'] = False
-#fab.output_prefix = False
-project_path=path=os.getcwd()
-data_path="{}/{}".format(project_path,"data")
 
-@fab.task
-@fab.parallel
-def install_python_deps():
-    fab.sudo("apt-get install -y python-scapy python-netifaces python-numpy")
+import fabric.api as fab
+from fabric.contrib.files import exists
 
-@fab.task
+from utils.conn_matrix import ConnMatrix
+from utils.username import get_username
+
+fab.env.user = get_username()
+project_path = os.path.join('/users', fab.env.user, 'react80211')
+
+hosts_driver = []
+hosts_txpower = []
+
 def set_hosts(host_file):
     #fab.env.hosts = open(host_file, 'r').readlines()
     global hosts_txpower;
@@ -61,38 +35,28 @@ def set_hosts(host_file):
 
 #---------------------
 #SET NODES
-hosts_driver=set_hosts('node_info.txt')
+hosts_driver = set_hosts('node_info.txt')
+
+@fab.task
+@fab.parallel
+def install_python_deps():
+    fab.sudo("apt-get install -y python-scapy python-netifaces python-numpy python-flask")
 
 @fab.task
 @fab.parallel
 # Ad-hoc node association
 #echo "usage $0 <iface> <essid> <freq> <power> <rate> <ip> <mac> <reload[1|0]>"
 def associate(driver,iface,essid,freq,txpower,rate,ip_addr,mac_address="aa:bb:cc:dd:ee:ff",skip_reload=False,rts='off'):
+    # Load kernel modules
+    fab.sudo('cd ~/backports-cw-tuning/ && ./load.sh')
+
+    # Setup wireless interfaces
     with fab.settings(warn_only=True):
-        if driver=="ath9k":
-            if skip_reload == False:
-                fab.run('sudo rmmod ath9k ath9k_common ath9k_hw ath mac80211 cfg80211')
-                #fab.run('sudo modprobe ath9k')
-                fab.sudo('cd {0}/backports-wireless/; bash ./build.sh --load-module; cd {0} '.format(project_path))
-            else:
-                fab.run('iw {0} ibss leave'.format(iface))
             fab.run('sudo iwconfig {0} mode ad-hoc; sudo ifconfig {0} {5} up;sudo iwconfig {0} txpower {3}dbm; sudo iwconfig {0} rate {4}M fixed;sudo iw dev {0} ibss join {1} {2} fixed-freq {6}'.format(iface,essid,freq,txpower,rate,ip_addr,mac_address))
             iface_mon='mon0';
             fab.sudo('iw dev {0} interface add {1} type monitor'.format(iface,iface_mon));
             fab.sudo('ifconfig {0} up'.format(iface_mon));
             fab.run('sudo iwconfig {0} rts {1}'.format(iface,rts))
-
-        elif driver=="b43":
-
-            if skip_reload == False:
-                fab.run('sudo rmmod b43')
-                fab.run('sudo modprobe b43 qos=0')
-            else:
-                fab.run('iw {0} ibss leave'.format(iface))
-            fab.run('sudo iwconfig {0} mode ad-hoc; sudo ifconfig {0} {5} up;sudo iwconfig {0} txpower {3}; sudo iwconfig {0} rate {4}M fixed;sudo iw dev {0} ibss join {1} {2} fixed-freq {6}'.format(iface,essid,freq,txpower,rate,ip_addr,mac_address))
-        else:
-            "driver {} not supported".format(driver)
-            return
 
 @fab.task
 @fab.parallel
@@ -116,8 +80,7 @@ def network(freq=2412,host_file=''):
 @fab.task
 @fab.parallel
 def stop_react():
-    with fab.settings(warn_only=True):
-        fab.sudo("pid=$(pgrep _react.py) && kill -9 $pid")
+    screen_stop_session('react')
 
 @fab.task
 @fab.parallel
@@ -127,7 +90,8 @@ def stop_react2():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, tuner='new', beta=None, k=None):
+def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=80,
+        prealloc=0):
     args = []
 
     args.append('-i')
@@ -140,14 +104,16 @@ def run_react(out_dir=None, tuner='new', beta=None, k=None):
     args.append('6000')
 
     args.append('-b')
-    if beta is None:
-        beta = 0.6
     args.append(str(beta))
 
     args.append('-k')
-    if k is None:
-        k = 500
     args.append(str(k))
+
+    args.append('-c')
+    args.append(str(capacity))
+
+    args.append('-p')
+    args.append(str(prealloc))
 
     # Without a tuner REACT is disabled and we just collect airtime data
     if tuner == 'new' or tuner == 'old':
@@ -156,12 +122,14 @@ def run_react(out_dir=None, tuner='new', beta=None, k=None):
 
     args.append('-o')
     if out_dir is None:
-        out_dir = makeout()
+        # Don't use unique output directory (this case is just for testing)
+        out_dir = makeout(unique=False)
     args.append('{}/react.csv'.format(out_dir))
 
     stop_react()
-    fab.sudo('setsid {}/_react.py {} &>~/react.{}.out </dev/null &'.format(
-        project_path, ' '.join(args), fab.env.host), pty=False)
+    screen_start_session('react',
+            'sudo python2.7 -u {}/_react.py {}'.format(project_path,
+            ' '.join(args)))
 
 @fab.task
 @fab.parallel
@@ -192,11 +160,37 @@ def run_react2(out_dir=None, enable_react=True):
 ################################################################################
 # time
 
+import socket
+import struct
+
+def dot2long(ip):
+    return struct.unpack("!L", socket.inet_aton(ip))[0]
+
+def long2dot(ip):
+    return socket.inet_ntoa(struct.pack('!L', ip))
+
+def get_my_mac(dev='wlan0'):
+    cmd = 'python -c' \
+            " 'from netifaces import *;" \
+            ' print ifaddresses("{}")[17][0]["addr"]\''
+    return fab.run(cmd.format(dev))
+
+def get_my_ip(dev='wlan0'):
+    cmd = 'python -c' \
+            " 'from netifaces import *;" \
+            ' print ifaddresses("{}")[AF_INET][0]["addr"]\''
+    return fab.run(cmd.format(dev))
+
 @fab.task
 @fab.parallel
 def time_sync():
     fab.sudo('service ntp stop')
     fab.sudo('ntpdate time.nist.gov')
+
+@fab.task
+@fab.parallel
+def yobooyathere():
+    fab.run(':')
 
 ################################################################################
 # screen
@@ -224,15 +218,7 @@ def screen_stop_all():
         screen_stop_session(name)
 
 ################################################################################
-# iperf
-
-def get_my_mac(dev='wlan0'):
-    cmd = 'python -c \'from netifaces import *; print ifaddresses("{}")[17][0]["addr"]\''
-    return fab.run(cmd.format(dev))
-
-def get_my_ip(dev='wlan0'):
-    cmd = 'python -c \'from netifaces import *; print ifaddresses("{}")[AF_INET][0]["addr"]\''
-    return fab.run(cmd.format(dev))
+# iperf and roadtrip
 
 @fab.task
 def iperf_start_servers():
@@ -247,7 +233,7 @@ def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
             cmd += ' -u -b {}'.format(rate)
         cmd += ' -t -1 -i 1 -yC'
 
-        # SIGINT propagates along pipe, killing iperf, and thus tee even with -i
+        # Use -i (ignore signals) so that SIGINT propagted up pipe to iperf
         cmd += ' | tee -i {}/{}.csv'.format(host_out_dir, server)
 
         screen_start_session('iperf_client', cmd)
@@ -256,17 +242,34 @@ def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
 def iperf_stop_clients():
     screen_stop_session('iperf_client', interrupt=True)
 
+@fab.task
+def roadtrip_start_servers():
+    # Roadtrip listens for TCP and UDP at the same time by default
+    screen_start_session('roadtrip_server', '~/bin/roadtrip -listen' \
+            ' &>>~/data/{}_roadtrip.log'.format(fab.env.host))
+
+@fab.task
+def roadtrip_start_clients(host_out_dir, conn_matrix, tcp=False):
+    for server in conn_matrix.links(get_my_ip()):
+        args = []
+
+        args.append('-address')
+        args.append(server)
+
+        if not(tcp):
+            args.append('-udp')
+
+        cmd = '~/bin/roadtrip {} 2>&1 | tee -i {}/roadtrip_{}.csv'.format(
+                " ".join(args), host_out_dir, server)
+
+        screen_start_session('roadtrip_client', cmd)
+
+@fab.task
+def roadtrip_stop_clients():
+    screen_stop_session('roadtrip_client', interrupt=True)
+
 ################################################################################
 # Multi-hop MAC address setup
-
-import socket
-import struct
-
-def dot2long(ip):
-    return struct.unpack("!L", socket.inet_aton(ip))[0]
-
-def long2dot(ip):
-    return socket.inet_ntoa(struct.pack('!L', ip))
 
 def collect_ip2mac_map(ip2mac):
     ip2mac[dot2long(get_my_ip())] = get_my_mac()
@@ -320,11 +323,46 @@ def setup_multihop():
     fab.execute(set_neighbors, ip2mac)
 
 ################################################################################
+# Multi-hop Reservations
+
+@fab.parallel
+def res_server_kickoff(ip2mac):
+
+    def get_if_in_ip2mac(ip):
+        if ip in ip2mac:
+            return long2dot(ip)
+        else:
+            return ""
+
+    myip = dot2long(get_my_ip())
+    n1 = get_if_in_ip2mac(myip - 1)
+    n2 = get_if_in_ip2mac(myip + 1)
+    myip = long2dot(myip)
+
+    screen_start_session('res_server',
+            'python2.7 -u' \
+            ' {}/reservation/reservation_server.py {} {} {}' \
+            ' &>>~/data/{}_res_server.log'.format(project_path, myip, n1, n2,
+            fab.env.host))
+
+@fab.task
+@fab.runs_once
+def res_server_start():
+    ip2mac = {}
+    fab.execute(collect_ip2mac_map, ip2mac)
+    fab.execute(res_server_kickoff, ip2mac)
+
+@fab.task
+@fab.parallel
+def res_server_stop():
+    screen_stop_session('res_server')
+
+################################################################################
 # start/stop exps and make output dirs
 
 @fab.task
 @fab.parallel
-def makeout(out_dir='~/data/test', trial_dir=None):
+def makeout(out_dir='~/data/test', trial_dir=None, unique=True):
     expanduser_cmd = "python -c 'import os; print os.path.expanduser(\"{}\")'"
     out_dir = fab.run(expanduser_cmd.format(out_dir))
 
@@ -339,8 +377,7 @@ def makeout(out_dir='~/data/test', trial_dir=None):
 
         host_out_dir = '/'.join(subdirs)
 
-        from fabric.contrib.files import exists
-        if not(exists(host_out_dir)):
+        if not(unique) or not(exists(host_out_dir)):
             break
 
         i +=1
@@ -355,6 +392,7 @@ def setup():
     install_python_deps()
     network(freq=5180)
     iperf_start_servers()
+    roadtrip_start_servers()
 
 @fab.task
 @fab.parallel
@@ -362,6 +400,8 @@ def stop_exp():
     stop_react()
     stop_react2()
     iperf_stop_clients()
+    res_server_stop()
+    roadtrip_stop_clients()
 
 ################################################################################
 # topos
@@ -402,11 +442,7 @@ def exp_betak(tname):
     @fab.parallel
     def betak(out_dir, tname, beta, k):
         host_out_dir = makeout(out_dir, '{:03}-{:04}'.format(int(beta*100), k))
-
         run_react(host_out_dir, 'new', beta, k)
-
-        time.sleep(1)
-
         topo(tname, host_out_dir, False)
 
     betas = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
@@ -426,20 +462,68 @@ def exp_comp(tname):
     @fab.parallel
     def comp(out_dir, tname, use):
         host_out_dir = makeout(out_dir, use)
-
         if use != 'oldest':
             run_react(host_out_dir, use)
         else:
             run_react2(host_out_dir)
-
-        time.sleep(1)
-
         topo(tname, host_out_dir, False)
 
     for use in  ['dot', 'new', 'old', 'oldest']:
         fab.execute(comp, "~/data/96_comp/{}".format(tname), tname, use)
         time.sleep(120)
         fab.execute(stop_exp)
+
+@fab.task
+@fab.runs_once
+def exp_multi():
+    ip2mac = {}
+    fab.execute(collect_ip2mac_map, ip2mac)
+
+    last = None
+    for ip in ip2mac:
+        if last is None or ip > last:
+            last = ip
+    last = long2dot(last)
+
+    def multi_makeout(use, tcp):
+        return makeout('~/data/95_multi/', '{}-{}-{}'.format(len(ip2mac), use,
+                'tcp' if tcp else 'udp'))
+
+    @fab.task
+    @fab.parallel
+    def multi(use, tcp):
+        host_out_dir = multi_makeout(use, tcp)
+
+        if use == 'new':
+            status = json.loads(fab.run(
+                    '{}/reservation/reserver.py get_status {}'.format(
+                    project_path, get_my_ip())))
+            capacity = float(status['capacity'])/100.0
+            allocation = float(status['allocation'])/100.0
+            run_react(host_out_dir, use, capacity=capacity, prealloc=allocation)
+        else:
+            run_react(host_out_dir, use)
+
+        cm = ConnMatrix()
+        cm.add('192.168.0.1', last)
+        cm.add(last, r'NONE')
+        roadtrip_start_clients(host_out_dir, cm, tcp)
+
+    for use in  ['dot', 'new']:
+        for tcp in [True, False]:
+            for i in xrange(10:
+                if use == 'new':
+                    fab.execute(res_server_kickoff, ip2mac)
+                    time.sleep(1) # wait for server to start
+
+                    resp = fab.run(
+                            '{}/reservation/reserver.py place_reservation' \
+                            ' 192.168.0.1 {} 26'.format(project_path, last))
+                    assert json.loads(resp)['placed']
+
+                fab.execute(multi, use, tcp)
+                time.sleep(120)
+                fab.execute(stop_exp)
 
 @fab.task
 @fab.parallel
@@ -526,52 +610,9 @@ def exp_concept(enable_react):
 
     run_react(host_out_dir, 'new' if enable_react else None)
 
-#@fab.task
-#@fab.parallel
-#def exp_hilo(trial):
-#    if trial == 'none':
-#        no_react = True
-#        ct = None
-#    elif trial == 'low':
-#        no_react = False
-#        ct = 0
-#    elif trial == 'high':
-#        no_react = False
-#        ct = 1023
-#    else:
-#        exit(1)
-#
-#    host_out_dir = makeout('~/data/02_hilo/{}'.format(trial))
-#
-#    cm = ConnMatrix()
-#    cm.add('192.168.0.1', r'192.168.0.2')
-#    cm.add('192.168.0.2', r'192.168.0.3')
-#    cm.add('192.168.0.3', r'192.168.0.4')
-#    cm.add('192.168.0.4', r'192.168.0.1')
-#    iperf_start_clients(host_out_dir, cm)
-#
-#    run_react(out_dir=host_out_dir, no_react=no_react, ct=ct)
-#
-#@fab.task
-#@fab.parallel
-#def exp_parameters(beta, k):
-#    host_out_dir = makeout('~/data/03_parameters', 'b{:03}_k{:03}'.format(
-#        int(float(beta)*100.0), int(k)))
-#
-#    cm = ConnMatrix()
-#    cm.add('192.168.0.1', r'192.168.0.2')
-#    cm.add('192.168.0.2', r'192.168.0.3')
-#    cm.add('192.168.0.3', r'192.168.0.4')
-#    cm.add('192.168.0.4', r'192.168.0.1')
-#    iperf_start_clients(host_out_dir, cm)
-#
-#    run_react(out_dir=host_out_dir, beta=beta, k=k)
-
 @fab.task
 @fab.parallel
 def exp_graph2():
-    import random
-
     host_out_dir = makeout('~/data/98_graph2')
 
     nodes = range(len(fab.env.hosts))
@@ -584,5 +625,20 @@ def exp_graph2():
 
 @fab.task
 @fab.parallel
-def yobooyathere():
-    fab.run(':')
+def exp_test(enable_react=False, tcp=True):
+    if isinstance(enable_react, basestring):
+        enable_react = bool(strtobool(enable_react))
+    if isinstance(tcp, basestring):
+        tcp = bool(strtobool(tcp))
+
+    host_out_dir = makeout()
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
+    if enable_react:
+        run_react(host_out_dir, tcp=tcp)
