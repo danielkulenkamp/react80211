@@ -10,5 +10,5 @@ while :
 do
     rsync -razP --delete testbed/ "$username@ops.wilab2.ilabt.iminds.be:react80211"
     echo
-    inotifywait testbed/
+    inotifywait --recursive testbed/
 done
