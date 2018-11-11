@@ -6,4 +6,5 @@ echo
 
 username="$(utils/username.py)"
 
-rsync -azP --ignore-existing "$username@ops.wilab2.ilabt.iminds.be:data/" data
+# The slashes here matter...a lot
+rsync -azP --delete "$username@ops.wilab2.ilabt.iminds.be:data/" data/
