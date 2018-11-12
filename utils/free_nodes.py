@@ -26,12 +26,12 @@ while True:
         d.execute_script('showhide("free_ZOTAC")')
 
         # print free nodes
-        time = pendulum.create(year, month, day, hour, tz='Europe/Brussels')
+        time = pendulum.datetime(year, month, day, hour, tz='Europe/Brussels')
         time_phx = time.in_timezone('America/Phoenix')
         nodes = d.find_elements_by_partial_link_text('zotac')
 
         sys.stdout.write("[{:02}] {}: {}\n".format(hour,
-                time_phx.format("%a %I %p"), len(nodes)))
+                time_phx.format('dddd Do [of] MMMM YYYY HH:mm A') , len(nodes)))
 
     raw_input('Hit Enter to re-run...')
     sys.stdout.write('\n')
