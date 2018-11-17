@@ -158,7 +158,7 @@ def run_react2(out_dir=None, enable_react=True):
         project_path, ' '.join(args), fab.env.host), pty=False)
 
 ################################################################################
-# time
+# misc
 
 import socket
 import struct
@@ -186,6 +186,11 @@ def get_my_ip(dev='wlan0'):
 def time_sync():
     fab.sudo('service ntp stop')
     fab.sudo('ntpdate time.nist.gov')
+
+@fab.task
+@fab.parallel
+def rm_proxy():
+    fab.sudo('rm -f /etc/apt/apt.conf.d/01proxy')
 
 @fab.task
 @fab.parallel
@@ -388,6 +393,7 @@ def makeout(out_dir='~/data/test', trial_dir=None, unique=True):
 @fab.task
 @fab.parallel
 def setup():
+    rm_proxy()
     time_sync()
     install_python_deps()
     network(freq=5180)
