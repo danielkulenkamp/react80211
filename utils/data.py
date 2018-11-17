@@ -12,6 +12,13 @@ import re
 import itertools
 from distutils.util import strtobool
 
+fn_map = {}
+
+def cmd(wrapped):
+    fn_map[wrapped.func_name] = wrapped
+    return wrapped
+
+@cmd
 def load_react_csv_data(node_dir, x_index, y_index):
     x_list = []
     y_list = []
@@ -21,7 +28,7 @@ def load_react_csv_data(node_dir, x_index, y_index):
     paths = glob('{}/*/react.csv'.format(node_dir))
 
     assert len(node_dirs) == len(paths) and len(paths) != 0, \
-            "Is there a missing react.csv file?"
+            'Is there a missing react.csv file?'
 
     for i in xrange(len(paths)):
         path = paths[i]
@@ -44,6 +51,7 @@ def get_xlim(x_list):
 
     return first, last
 
+@cmd
 def plot_react_csv_data(node_dir, y_index):
     x_list, y_list, node_list = load_react_csv_data(node_dir, 0, y_index)
 
@@ -56,6 +64,7 @@ def plot_react_csv_data(node_dir, y_index):
     for i in xrange(len(x_list)):
         plt.plot(x_list[i], y_list[i], label=node_list[i])
 
+@cmd
 def plot_react(node_dir, col='airtime', ylim=1.0, save=None, title=None):
     # Example react.csv row
     # 1520532965.14935,0.16000,0.20536,352,356
@@ -95,6 +104,7 @@ def plot_react(node_dir, col='airtime', ylim=1.0, save=None, title=None):
     else:
         plt.savefig(save)
 
+@cmd
 def converge_time(node_dir, cv_threshold):
     x_list, y_list, _ = load_react_csv_data(node_dir, 0, 2)
     first, _ = get_xlim(x_list)
@@ -124,10 +134,12 @@ def converge_time(node_dir, cv_threshold):
     # does not converge
     return x_list[0][-1] - first
 
+@cmd
 def convergence(node_dir, threshold=0.1):
     threshold = float(threshold)
     print converge_time(node_dir, threshold)
 
+@cmd
 def heatmap(out_dir, threshold=0.1):
     print out_dir
     threshold = float(threshold)
@@ -182,6 +194,7 @@ def thr(path):
     assert throughput is not None, 'Did not parse throughput'
     return throughput
 
+@cmd
 def plot_thr(trial_dir, proto='tcp', plot=True):
     def get_path(trial_dir, alg, proto):
         expand = '{}/{}-{}/zotac*/192.*.csv'.format(trial_dir, alg, proto)
@@ -211,6 +224,7 @@ def plot_thr(trial_dir, proto='tcp', plot=True):
 
     plt.show()
 
+@cmd
 def get_graphs(node_dir):
     # Create a dictionary that maps IP addresses to testbed node names
     ip_to_node = {}
@@ -270,6 +284,7 @@ def get_graphs(node_dir):
 
     return G100, Gall
 
+@cmd
 def net_graph(node_dir):
     G100, Gall = get_graphs(node_dir)
 
@@ -277,6 +292,7 @@ def net_graph(node_dir):
         nx.draw_networkx(g)
         plt.show()
 
+@cmd
 def find_paths(node_dir, length=4):
     length = int(length)
 
@@ -306,6 +322,7 @@ def find_paths(node_dir, length=4):
     for n in G100:
         check((n,))
 
+@cmd
 def find_star(node_dir, plot=False):
     if isinstance(plot, basestring):
         plot = bool(strtobool(plot))
@@ -333,6 +350,7 @@ def find_star(node_dir, plot=False):
                 plt.show()
             print nodes
 
+@cmd
 def plot_network(node_dir):
     G100, _ = get_graphs(node_dir)
 
@@ -355,6 +373,7 @@ def plot_network(node_dir):
 # 11 total 34116
 # 12 % dropped 14.618
 # 13 out of order 28
+@cmd
 def get_server_report(node_dir, nodes, index):
     data = []
 
@@ -422,6 +441,7 @@ def comp_setup():
 
     return nodes, dot_dir, old_dir, new_dir
 
+@cmd
 def comp_thr(unused):
     nodes, dot_dir, old_dir, new_dir = comp_setup()
 
@@ -438,6 +458,7 @@ def comp_thr(unused):
 
     comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Throughput', 'kbps')
 
+@cmd
 def comp_aggthr(unused):
     nodes, dot_dir, old_dir, new_dir = comp_setup()
 
@@ -465,6 +486,7 @@ def comp_aggthr(unused):
 
     plt.show()
 
+@cmd
 def comp_jitter(unused):
     nodes, dot_dir, old_dir, new_dir = comp_setup()
 
@@ -478,6 +500,7 @@ def comp_jitter(unused):
 
     comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Jitter', 'ms')
 
+@cmd
 def comp_drop(unused):
     nodes, dot_dir, old_dir, new_dir = comp_setup()
 
@@ -492,23 +515,8 @@ def comp_drop(unused):
     comp_barchart([dot_thr, new_thr, old_thr], nodes, 'Drop Rate', '%')
 
 if __name__ == '__main__':
-    fn_map = {
-        'plot_react': plot_react,
-        'convergence': convergence,
-        'plot_thr': plot_thr,
-        'net_graph': net_graph,
-        'find_paths': find_paths,
-        'find_star': find_star,
-        'plot_network': plot_network,
-        'heatmap': heatmap,
-        'comp_thr': comp_thr,
-        'comp_aggthr': comp_aggthr,
-        'comp_jitter': comp_jitter,
-        'comp_drop': comp_drop
-    }
-
     dirs = []
-    fn_name = ""
+    fn_name = ''
     override = {}
 
     # Custom argument parsing
@@ -545,7 +553,7 @@ if __name__ == '__main__':
             override[key] = value
     except AssertionError as e:
         print 'Error: ' + e.message
-        print 'Usage: data.py DIR [DIR...] -- FUNCTION [override[=value]' \
+        print 'Usage: data.py DIR [DIR...] -- CMD [override[=value]' \
                 ' [override[=value]...]]'
         print
         print 'Functions:'
