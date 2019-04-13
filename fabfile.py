@@ -90,7 +90,7 @@ def stop_react2():
 
 @fab.task
 @fab.parallel
-def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=80,
+def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=.80,
         prealloc=0):
     args = []
 
@@ -156,6 +156,25 @@ def run_react2(out_dir=None, enable_react=True):
     stop_react2()
     fab.sudo('setsid {}/react.py {} &>~/react.{}.out </dev/null &'.format(
         project_path, ' '.join(args), fab.env.host), pty=False)
+
+
+@fab.task
+@fab.parallel
+def stop_cr_tuning():
+    screen_stop_session('cr_tuning')
+
+@fab.task
+@fab.parallel
+def run_cr_tuning(out_dir=None):
+    if out_dir is None:
+        # Don't use unique output directory (this case is just for testing)
+        out_dir = makeout(unique=False)
+
+    stop_cr_tuning()
+    screen_start_session('cr_tuning',
+            'sudo python2.7 -u {}/helpers/cr_tuning.py {}/react.csv'.format(
+                project_path, out_dir) +
+            ' || cat') # "or error, cat" keeps screen open for stdout inspection
 
 ################################################################################
 # misc
@@ -408,6 +427,7 @@ def stop_exp():
     iperf_stop_clients()
     res_server_stop()
     roadtrip_stop_clients()
+    stop_cr_tuning()
 
 ################################################################################
 # topos
@@ -631,13 +651,9 @@ def exp_graph2():
 
 @fab.task
 @fab.parallel
-def exp_test(enable_react=False, tcp=True):
-    if isinstance(enable_react, basestring):
-        enable_react = bool(strtobool(enable_react))
-    if isinstance(tcp, basestring):
-        tcp = bool(strtobool(tcp))
-
-    host_out_dir = makeout()
+def exp_cr_tuning(trial):
+    assert trial in ('dot', 'new', 'cr')
+    host_out_dir = makeout('~/data/42_cr_tuning', trial)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -646,5 +662,25 @@ def exp_test(enable_react=False, tcp=True):
     cm.add('192.168.0.4', r'192.168.0.1')
     iperf_start_clients(host_out_dir, cm)
 
+    if trial in ('dot', 'new'):
+        run_react(host_out_dir, tuner=trial)
+    else:
+        run_cr_tuning(host_out_dir)
+
+@fab.task
+@fab.parallel
+def exp_test(enable_react=False):
+    if isinstance(enable_react, basestring):
+        enable_react = bool(strtobool(enable_react))
+
+    host_out_dir = makeout()
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.1')
+    #cm.add('192.168.0.3', r'192.168.0.4')
+    #cm.add('192.168.0.4', r'192.168.0.1')
+    iperf_start_clients(host_out_dir, cm)
+
     if enable_react:
-        run_react(host_out_dir, tcp=tcp)
+        run_react(host_out_dir)

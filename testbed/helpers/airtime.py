@@ -6,6 +6,8 @@ import subprocess
 import time
 import argparse
 
+from observer import Observer
+
 def iw_survey_dump(dev):
     cmd = ['iw', dev, 'survey', 'dump']
     output = subprocess.check_output(cmd).split()
@@ -36,22 +38,15 @@ def iw_survey_dump(dev):
 
     return survey
 
-class ChannelObserver(object):
+class ChannelObserver(Observer):
 
     def __init__(self, dev='wlan0'):
-        self.dev = dev
+        super(ChannelObserver, self).__init__(iw_survey_dump, dev)
 
-        self.new_survey = iw_survey_dump(self.dev)
-        self.old_survey = {}
+class AirtimeObserver(Observer):
 
-    def update(self):
-        self.old_survey = self.new_survey
-        self.new_survey = iw_survey_dump(self.dev)
-
-    def surveysays(self, question):
-        return self.new_survey[question] - self.old_survey[question]
-
-class AirtimeObserver(ChannelObserver):
+    def __init__(self, dev='wlan0'):
+        super(AirtimeObserver, self).__init__(iw_survey_dump, dev)
 
     def airtime(self):
         self.update()

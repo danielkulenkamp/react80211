@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 from airtime import AirtimeObserver, ChannelObserver
+from collision_rate import CollisionRateObserver
 
 import sys
 import argparse
@@ -13,6 +14,8 @@ class TunerBase(object):
         # TODO: implement iface --> phy translation
         assert(iface == 'wlan0')
         phy = 'phy0'
+
+        self.cr_observer = CollisionRateObserver(iface)
 
         self.txq_params_fname = '/sys/kernel/debug/ieee80211/'
         self.txq_params_fname += phy
@@ -33,18 +36,20 @@ class TunerBase(object):
         f_cw.write(txq_params_msg)
         f_cw.close()
 
-    def log(self, alloc, airtime, cw_prev, cw):
-        self.log_file.write('{:.5f},{:.5f},{:.5f},{},{}\n'.format(
-                time.time(), alloc, airtime, cw_prev, cw))
+    def log(self, alloc, airtime, cw_prev, cw, cr):
+        self.log_file.write('{:.5f},{:.5f},{:.5f},{},{},{:.5f}\n'.format(
+                time.time(), alloc, airtime, cw_prev, cw, cr))
         self.log_file.flush()
 
     def update_cw(self, alloc, airtime):
-        self.log(alloc, airtime, -1, -1)
+        self.log(alloc, airtime, -1, -1, self.cr_observer.collision_rate())
 
 class TunerNew(TunerBase):
 
     def __init__(self, iface, log_file, cw_init, beta, k):
         super(TunerNew, self).__init__(iface, log_file)
+
+        self.cr_observer = CollisionRateObserver(iface)
 
         self.k = k
         self.beta = beta
@@ -64,7 +69,8 @@ class TunerNew(TunerBase):
         cw = 1023 if cw > 1023 else cw
         self.set_cw(cw)
 
-        self.log(alloc, airtime, self.cw_prev, cw)
+        self.log(alloc, airtime, self.cw_prev, cw,
+                self.cr_observer.collision_rate())
         self.cw_prev = cw
 
 class TunerOld(TunerBase):
@@ -74,6 +80,8 @@ class TunerOld(TunerBase):
 
         self.cmd = ['cat', '/sys/kernel/debug/ieee80211/phy0/statistics/'
                 'dot11RTSSuccessCount']
+
+        self.cr_observer = CollisionRateObserver(iface)
 
         self.observer = ChannelObserver()
         self.n = int(subprocess.check_output(self.cmd))
@@ -94,7 +102,8 @@ class TunerOld(TunerBase):
         cw = 1023 if cw > 1023 else cw
         self.set_cw(cw)
 
-        self.log(alloc, airtime, self.cw_prev, cw)
+        self.log(alloc, airtime, self.cw_prev, cw,
+                self.cr_observer.collision_rate())
         self.cw_prev = cw
 
 if __name__ == '__main__':
