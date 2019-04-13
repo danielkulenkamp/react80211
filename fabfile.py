@@ -517,7 +517,7 @@ def exp_multi():
 
     for use in  ['dot', 'new']:
         for tcp in [True, False]:
-            for i in xrange(10:
+            for i in xrange(10):
                 if use == 'new':
                     fab.execute(res_server_kickoff, ip2mac)
                     time.sleep(1) # wait for server to start
