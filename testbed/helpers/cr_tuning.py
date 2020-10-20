@@ -45,7 +45,7 @@ if __name__ == '__main__':
     else:
         log = sys.stdout
 
-    tuner = TunerCollisionRate('wlan0', log, 32)
+    tuner = TunerCollisionRate('wls33', log, 32)
     while True:
         time.sleep(1)
         tuner.update_cw()

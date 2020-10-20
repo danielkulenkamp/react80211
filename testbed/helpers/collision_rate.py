@@ -7,8 +7,8 @@ import time
 
 from observer import Observer
 
-# TODO: somehow our setup casuses there to be three "wlan0 stations"
-# ...so return the largest collision rate because that's the real wlan0
+# TODO: somehow our setup casuses there to be three "wls33 stations"
+# ...so return the largest collision rate because that's the real wls33
 
 def iw_station_dump(dev):
     cmd = ['iw', dev, 'station', 'dump']
@@ -32,7 +32,7 @@ def iw_station_dump(dev):
 
 class CollisionRateObserver(Observer):
 
-    def __init__(self, dev='wlan0'):
+    def __init__(self, dev='wls33'):
         super(CollisionRateObserver, self).__init__(iw_station_dump, dev)
 
     def collision_rate(self):
@@ -47,7 +47,7 @@ class CollisionRateObserver(Observer):
             return 0.0
 
 if __name__ == '__main__':
-    observer = CollisionRateObserver('wlan0')
+    observer = CollisionRateObserver('wls33')
     while True:
         time.sleep(1)
         print observer.collision_rate()

@@ -12,7 +12,7 @@ class TunerBase(object):
 
     def __init__(self, iface, log_file):
         # TODO: implement iface --> phy translation
-        assert(iface == 'wlan0')
+        assert(iface == 'wls33')
         phy = 'phy0'
 
         self.cr_observer = CollisionRateObserver(iface)
@@ -123,9 +123,9 @@ if __name__ == '__main__':
 
     if args.no_tuning:
         # TODO: change this back to TunerBase??
-        tuner = TunerOld('wlan0', sys.stdout, args.cw_initial)
+        tuner = TunerOld('wls33', sys.stdout, args.cw_initial)
     else:
-        tuner = TunerNew('wlan0', sys.stdout, args.cw_initial, 0.5, args.k)
+        tuner = TunerNew('wls33', sys.stdout, args.cw_initial, 0.5, args.k)
 
     ao = AirtimeObserver()
     while True:

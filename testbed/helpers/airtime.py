@@ -40,12 +40,12 @@ def iw_survey_dump(dev):
 
 class ChannelObserver(Observer):
 
-    def __init__(self, dev='wlan0'):
+    def __init__(self, dev='wls33'):
         super(ChannelObserver, self).__init__(iw_survey_dump, dev)
 
 class AirtimeObserver(Observer):
 
-    def __init__(self, dev='wlan0'):
+    def __init__(self, dev='wls33'):
         super(AirtimeObserver, self).__init__(iw_survey_dump, dev)
 
     def airtime(self):
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser(
             description="Measure airtime using 'iw DEV survey dump'.",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument('-d', '--dev', action='store', default='wlan0',
+    p.add_argument('-d', '--dev', action='store', default='wls33',
             help='wireless interface')
     p.add_argument('-t', '--sleep_time', action='store', default=1.0, type=float,
             help='time (in seconds) to pause between airtime measurements')

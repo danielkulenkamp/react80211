@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/users/dkulenka/.pyenv/shims/python
 
 import time
 import os
@@ -12,9 +12,10 @@ from fabric.contrib.files import exists
 from utils.conn_matrix import ConnMatrix
 from utils.username import get_username
 
-fab.env.user = get_username()
-project_path = os.path.join('/users', fab.env.user, 'react80211')
+fab.env.user = 'dkulenka'
+project_path = os.path.join('/groups/wall2-ilabt-iminds-be/react/old_react/react80211')
 
+python_path = '/users/dkulenka/.pyenv/shims/python'
 hosts_driver = []
 hosts_txpower = []
 
@@ -48,7 +49,7 @@ def install_python_deps():
 #echo "usage $0 <iface> <essid> <freq> <power> <rate> <ip> <mac> <reload[1|0]>"
 def associate(driver,iface,essid,freq,txpower,rate,ip_addr,mac_address="aa:bb:cc:dd:ee:ff",skip_reload=False,rts='off'):
     # Load kernel modules
-    fab.sudo('cd ~/backports-cw-tuning/ && ./load.sh')
+    fab.sudo('cd /groups/wall2-ilabt-iminds-be/react/backports/16-new/backports-cw-tuning && ./load.sh')
 
     # Setup wireless interfaces
     with fab.settings(warn_only=True):
@@ -61,7 +62,7 @@ def associate(driver,iface,essid,freq,txpower,rate,ip_addr,mac_address="aa:bb:cc
 @fab.task
 @fab.parallel
 def set_txpower(txpower):
-    fab.run('sudo iwconfig wlan0 txpower {0}'.format(txpower))
+    fab.run('sudo iwconfig wls33 txpower {0}'.format(txpower))
 
 @fab.task
 #setup network, ad-hoc association
@@ -75,7 +76,7 @@ def network(freq=2412,host_file=''):
     driver=hosts_driver[i_ip];
     txpower=hosts_txpower[i_ip]
     print hosts_txpower
-    fab.execute(associate,driver,'wlan0','test',freq,txpower,6,'192.168.0.{0}'.format(i_ip+1),'aa:bb:cc:dd:ee:ff',skip_reload=False,rts='250',hosts=[fab.env.hosts[i_ip]])
+    fab.execute(associate,driver,'wls33','test',freq,txpower,6,'192.168.0.{0}'.format(i_ip+1),'aa:bb:cc:dd:ee:ff',skip_reload=False,rts='250',hosts=[fab.env.hosts[i_ip]])
 
 @fab.task
 @fab.parallel
@@ -95,7 +96,7 @@ def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=.80,
     args = []
 
     args.append('-i')
-    args.append('wlan0')
+    args.append('wls33')
 
     args.append('-t')
     args.append('0.1')
@@ -128,8 +129,9 @@ def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=.80,
 
     stop_react()
     screen_start_session('react',
-            'sudo python2.7 -u {}/_react.py {}'.format(project_path,
-            ' '.join(args)))
+            'sudo python2.7 -u {}/_react.py {}'.format(
+                os.path.join(project_path, 'testbed'), 
+                ' '.join(args)))
 
 @fab.task
 @fab.parallel
@@ -137,7 +139,7 @@ def run_react2(out_dir=None, enable_react=True):
     args = []
 
     args.append('-i')
-    args.append('wlan0')
+    args.append('wls33')
 
     args.append('-t')
     args.append('0.1')
@@ -188,13 +190,13 @@ def dot2long(ip):
 def long2dot(ip):
     return socket.inet_ntoa(struct.pack('!L', ip))
 
-def get_my_mac(dev='wlan0'):
+def get_my_mac(dev='wls33'):
     cmd = 'python -c' \
             " 'from netifaces import *;" \
             ' print ifaddresses("{}")[17][0]["addr"]\''
     return fab.run(cmd.format(dev))
 
-def get_my_ip(dev='wlan0'):
+def get_my_ip(dev='wls33'):
     cmd = 'python -c' \
             " 'from netifaces import *;" \
             ' print ifaddresses("{}")[AF_INET][0]["addr"]\''
@@ -302,7 +304,7 @@ def sudo_ip_neigh_add(ip, mac):
     if not(isinstance(ip, str)):
         ip = long2dot(ip)
 
-    ip_neigh_add_cmd = 'ip neighbor add {} lladdr {} dev wlan0 nud permanent'
+    ip_neigh_add_cmd = 'ip neighbor add {} lladdr {} dev wls33 nud permanent'
     fab.sudo(ip_neigh_add_cmd.format(ip, mac))
 
 def set_neighbors(ip2mac):
@@ -326,8 +328,8 @@ def set_neighbors(ip2mac):
             pass # ip == myip
 
     fab.sudo('sysctl -w net.ipv4.ip_forward=1')
-    fab.sudo('ip link set dev wlan0 arp off')
-    fab.sudo('ip neigh flush dev wlan0')
+    fab.sudo('ip link set dev wls33 arp off')
+    fab.sudo('ip neigh flush dev wls33')
 
     if low_neigh is not None:
         sudo_ip_neigh_add(low_neigh, ip2mac[low_neigh])
@@ -386,7 +388,7 @@ def res_server_stop():
 
 @fab.task
 @fab.parallel
-def makeout(out_dir='~/data/test', trial_dir=None, unique=True):
+def makeout(out_dir='/groups/wall2-ilabt-iminds-be/react/old_react/test', trial_dir=None, unique=True):
     expanduser_cmd = "python -c 'import os; print os.path.expanduser(\"{}\")'"
     out_dir = fab.run(expanduser_cmd.format(out_dir))
 
@@ -556,7 +558,7 @@ def exp_multi():
 def exp_4con(use):
     assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
 
-    host_out_dir = makeout('~/data/01_4con', use)
+    host_out_dir = makeout('/groups/wall2-ilabt-iminds-be/react/old_react/data/01_4con', use)
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -644,7 +646,7 @@ def exp_graph2():
     nodes = range(len(fab.env.hosts))
     random.shuffle(nodes)
 
-    cmd = 'ping -c 100 -I wlan0 192.168.0.{0} > {1}/192.168.0.{0}'
+    cmd = 'ping -c 100 -I wls33 192.168.0.{0} > {1}/192.168.0.{0}'
     for n in nodes:
         with fab.settings(warn_only=True):
             fab.run(cmd.format(n + 1, host_out_dir))
