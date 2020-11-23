@@ -1,3 +1,6 @@
 *.pyc
 node_info.txt
 data/
+venv/
+.idea/
+.DS_Store
