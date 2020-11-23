@@ -1,12 +1,13 @@
 #!/usr/bin/python
 
-from airtime import AirtimeObserver, ChannelObserver
-from collision_rate import CollisionRateObserver
-
 import sys
 import argparse
 import time
 import subprocess
+
+from helpers.airtime import AirtimeObserver, ChannelObserver
+from helpers.collision_rate import CollisionRateObserver
+
 
 class TunerBase(object):
 

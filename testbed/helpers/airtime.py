@@ -1,16 +1,14 @@
 #!/usr/bin/python
 
-from __future__ import division
-
 import subprocess
 import time
 import argparse
 
-from observer import Observer
+from helpers.observer import Observer
 
 def iw_survey_dump(dev):
     cmd = ['iw', dev, 'survey', 'dump']
-    output = subprocess.check_output(cmd).split()
+    output = subprocess.check_output(cmd).decode("utf-8").split()
     survey = {}
 
     def skip(output, i, to):
@@ -75,7 +73,7 @@ if __name__ == '__main__':
     ao = AirtimeObserver(args.dev)
     while True:
         time.sleep(args.sleep_time)
-        print ao.airtime()
+        print(ao.airtime())
 
         if args.once:
             break

@@ -1,18 +1,16 @@
 #!/usr/bin/python
 
-from __future__ import division
-
 import subprocess
 import time
 
-from observer import Observer
+from helpers.observer import Observer
 
 # TODO: somehow our setup casuses there to be three "wls33 stations"
 # ...so return the largest collision rate because that's the real wls33
 
 def iw_station_dump(dev):
     cmd = ['iw', dev, 'station', 'dump']
-    output = subprocess.check_output(cmd).splitlines()
+    output = subprocess.check_output(cmd).decode("utf-8").splitlines()
 
     def match_and_append(line, match, alist):
         parts = line.split(match)
@@ -50,4 +48,4 @@ if __name__ == '__main__':
     observer = CollisionRateObserver('wls33')
     while True:
         time.sleep(1)
-        print observer.collision_rate()
+        print(observer.collision_rate())

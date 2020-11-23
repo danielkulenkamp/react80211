@@ -1,688 +1,515 @@
-#!/users/dkulenka/.pyenv/shims/python
+#!/usr/bin python
 
 import time
 import os
-import random
-from distutils.util import strtobool
-import json
+import socket
+import struct
 
-import fabric.api as fab
-from fabric.contrib.files import exists
+import lsb_release_ex as lsb
+
+from fabric import Connection
+from fabric import task
+from fabric.group import ThreadingGroup
+
+from invoke import run
+
+from patchwork.files import exists
 
 from utils.conn_matrix import ConnMatrix
-from utils.username import get_username
 
-fab.env.user = 'dkulenka'
-project_path = os.path.join('/groups/wall2-ilabt-iminds-be/react/old_react/react80211')
+"""
+For the fabric tasks, my convention here is to put the first argument as 'c'
+if the task does NOT use the passed in connection object. If the task DOES use
+the passed in connection object, it will be called 'conn'. 
 
-python_path = '/users/dkulenka/.pyenv/shims/python'
-hosts_driver = []
-hosts_txpower = []
+You don't have to pass in a value for c, because the default value is None. 
+"""
+
+
+# TODO: Fix it so it grabs the user's name, rather than using mine for all
+USERNAME = 'dkulenka'
+PROJECT_PATH = '/groups/wall2-ilabt-iminds-be/react/updating/react80211'
+HOSTS = []
+PYTHON_PATH = '/groups/wall2-ilabt-iminds-be/react/pyenv/versions/3.9.0/bin/python'
+
+HOSTS_DRIVER = []
+HOSTS_TX_POWER = []
+
 
 def set_hosts(host_file):
-    #fab.env.hosts = open(host_file, 'r').readlines()
-    global hosts_txpower;
+    global HOSTS
+    global HOSTS_DRIVER
+    global HOSTS_TX_POWER
+
     hosts_info_file = open(host_file, 'r').readlines()
-    hosts_info=[];
-    hosts_driver=[];
+
+    hosts_info=[]
     for i in hosts_info_file:
         if not i.startswith("#"):
-            hosts_info.append(i);
-    fab.env.hosts = [i.split(',')[0] for i in hosts_info]
-    hosts_driver= [i.split(',')[1].replace("\n", "") for i in hosts_info]
-    print hosts_driver
-    hosts_txpower= [i.split(',')[2].replace("\n", "") for i in hosts_info]
-    return hosts_driver
+            hosts_info.append(i)
 
-#---------------------
-#SET NODES
-hosts_driver = set_hosts('node_info.txt')
+    HOSTS = [i.split(',')[0] for i in hosts_info]
+    HOSTS_DRIVER = [i.split(',')[1].replace("\n", "") for i in hosts_info]
+    HOSTS_TX_POWER = [i.split(',')[2].replace("\n", "") for i in hosts_info]
 
-@fab.task
-@fab.parallel
-def install_python_deps():
-    fab.sudo("apt-get install -y python-scapy python-netifaces python-numpy python-flask")
+# set nodes
+set_hosts('node_info.txt')
 
-@fab.task
-@fab.parallel
-# Ad-hoc node association
-#echo "usage $0 <iface> <essid> <freq> <power> <rate> <ip> <mac> <reload[1|0]>"
-def associate(driver,iface,essid,freq,txpower,rate,ip_addr,mac_address="aa:bb:cc:dd:ee:ff",skip_reload=False,rts='off'):
-    # Load kernel modules
-    fab.sudo('cd /groups/wall2-ilabt-iminds-be/react/backports/16-new/backports-cw-tuning && ./load.sh')
 
-    # Setup wireless interfaces
-    with fab.settings(warn_only=True):
-            fab.run('sudo iwconfig {0} mode ad-hoc; sudo ifconfig {0} {5} up;sudo iwconfig {0} txpower {3}dbm; sudo iwconfig {0} rate {4}M fixed;sudo iw dev {0} ibss join {1} {2} fixed-freq {6}'.format(iface,essid,freq,txpower,rate,ip_addr,mac_address))
-            iface_mon='mon0';
-            fab.sudo('iw dev {0} interface add {1} type monitor'.format(iface,iface_mon));
-            fab.sudo('ifconfig {0} up'.format(iface_mon));
-            fab.run('sudo iwconfig {0} rts {1}'.format(iface,rts))
+# TODO: See if you really need to install all of these dependencies?
+@task
+def install_python_deps(c):
+    """Install python dependencies. """
+    global HOSTS
 
-@fab.task
-@fab.parallel
-def set_txpower(txpower):
-    fab.run('sudo iwconfig wls33 txpower {0}'.format(txpower))
+    group = ThreadingGroup(*HOSTS)
+    group.run("sudo apt-get update; sudo apt-get install -y python-scapy python-netifaces python-numpy python-flask")
 
-@fab.task
-#setup network, ad-hoc association
-def network(freq=2412,host_file=''):
-    global hosts_txpower
 
-    #search my host
-    i_ip=fab.env.hosts.index(fab.env.host)
-    print fab.env.hosts
-    print hosts_driver
-    driver=hosts_driver[i_ip];
-    txpower=hosts_txpower[i_ip]
-    print hosts_txpower
-    fab.execute(associate,driver,'wls33','test',freq,txpower,6,'192.168.0.{0}'.format(i_ip+1),'aa:bb:cc:dd:ee:ff',skip_reload=False,rts='250',hosts=[fab.env.hosts[i_ip]])
+@task
+def set_tx_power(c, interface = 'wls33', tx_power = 1):
+    """Sets tx_power for an interface. """
+    global HOSTS
 
-@fab.task
-@fab.parallel
-def stop_react():
-    screen_stop_session('react')
+    group = ThreadingGroup(*HOSTS)
+    group.run(f'sudo iwconfig {interface} txpower {tx_power}')
 
-@fab.task
-@fab.parallel
-def stop_react2():
-    with fab.settings(warn_only=True):
-        fab.sudo("pid=$(pgrep react.py) && kill -9 $pid")
 
-@fab.task
-@fab.parallel
-def run_react(out_dir=None, tuner='new', beta=0.6, k=500, capacity=.80,
-        prealloc=0):
-    args = []
+@task
+def network(c, frequency = 2412, interface = 'wls33',
+            rts = 'off', mac_address = 'aa:bb:cc:dd:ee:ff'):
+    """Sets up ad-hoc network between the nodes. """
+    global HOSTS
+    global HOSTS_DRIVER
+    global HOSTS_TX_POWER
 
-    args.append('-i')
-    args.append('wls33')
+    monitor_interface = 'mon0'
 
-    args.append('-t')
-    args.append('0.1')
+    for host in HOSTS:
+        ip_index = HOSTS.index(host)
+        print(HOSTS)
+        print(HOSTS_DRIVER)
+        driver = HOSTS_DRIVER[ip_index]
+        tx_power = HOSTS_TX_POWER[ip_index]
+        print(HOSTS_TX_POWER)
 
-    args.append('-r')
-    args.append('6000')
+        ip_addr = f'192.168.0.{ip_index + 1}'
+        rate = 6
+        essid = 'test'
 
-    args.append('-b')
-    args.append(str(beta))
+        # find backports binary
+        if '18' in lsb.get_distro_information()['RELEASE']:
+            backports_str = '/groups/wall2-ilabt-iminds-be/react/backports/18/backports-cw-tuning/'
+        elif '16' in lsb.get_distro_information()['RELEASE']:
+            backports_str = '/groups/wall2-ilabt-iminds-be/react/backports/16/backports-cw-tuning/'
+        else:
+            raise ValueError("Unsupported OS version")
 
-    args.append('-k')
-    args.append(str(k))
+        # associate host
+        conn = Connection(host)
+        # conn.run(f'cd {backports_str}')
 
-    args.append('-c')
-    args.append(str(capacity))
+        # This command has to be together, in order for the kernel modules to load
+        # it uses relative folders in the load.sh script, so we need to be inside
+        # the backports patch folder
+        conn.run(f'cd {backports_str};sudo ./load.sh', warn=True)
 
-    args.append('-p')
-    args.append(str(prealloc))
+        conn.run(f'sudo iwconfig {interface} mode ad-hoc', warn=True)
+        conn.run(f'sudo ifconfig {interface} {ip_addr} up', warn=True)
+        conn.run(f'sudo iwconfig {interface} txpower {tx_power}dbm', warn=True)
+        conn.run(f'sudo iwconfig {interface} rate {rate}M fixed', warn=True)
+        conn.run(f'sudo iw dev {interface} ibss join {essid} {frequency} fixed-freq {mac_address}', warn=True)
+
+        conn.run(f'sudo iw dev {interface} interface add {monitor_interface} type monitor')
+        conn.run(f'sudo ifconfig {monitor_interface} up')
+        conn.run(f'sudo iwconfig {interface} rts {rts}')
+
+
+@task
+def test_screen(c):
+    """Tests to ensure screen is working among the nodes. """
+    global HOSTS
+    print(HOSTS)
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        screen_start_session(conn, "test", "watch free -m")
+
+
+@task
+def stop_react_all(c):
+    """Stops react on all nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        stop_react(conn)
+
+
+@task
+def stop_react(conn):
+    """Stops react on the node connected to with the given conn parameter. """
+    screen_stop_session(conn, 'react')
+
+
+@task
+def run_react(conn, out_dir=None, tuner='new', beta=0.6,
+              k = 500, capacity = 0.80, pre_allocation=0, qos=False,
+              interface='wls33'):
+    """Starts react on the node connected to with the given conn parameter."""
+    global PROJECT_PATH
+    global PYTHON_PATH
+
+    # arguments = ['-i', interface, '-t', '0.1', '-r', '6000', '-b', str(beta), '-k', str(k)]
+    arguments = ['-t', '0.1', '-r', '6000']
+    if qos:
+        arguments.append('-q')
+        arguments.append(str(capacity))
+    else:
+        arguments.append('-c')
+        arguments.append(str(capacity))
 
     # Without a tuner REACT is disabled and we just collect airtime data
-    if tuner == 'new' or tuner == 'old':
-        args.append('-e')
-        args.append(tuner)
+    if tuner == 'new':
+        arguments.append('-e')
+        arguments.append(tuner)
 
-    args.append('-o')
+    arguments.append('-o')
     if out_dir is None:
         # Don't use unique output directory (this case is just for testing)
-        out_dir = makeout(unique=False)
-    args.append('{}/react.csv'.format(out_dir))
+        out_dir = make_out_directory(conn, unique=False)
+    arguments.append(f'{out_dir}/react.csv')
 
-    stop_react()
-    screen_start_session('react',
-            'sudo python2.7 -u {}/_react.py {}'.format(
-                os.path.join(project_path, 'testbed'), 
-                ' '.join(args)))
+    react_path = os.path.join(PROJECT_PATH, 'testbed')
 
-@fab.task
-@fab.parallel
-def run_react2(out_dir=None, enable_react=True):
-    args = []
+    stop_react(conn)
 
-    args.append('-i')
-    args.append('wls33')
-
-    args.append('-t')
-    args.append('0.1')
-
-    args.append('-r')
-    args.append('6000')
-
-    if enable_react:
-        args.append('-e')
-
-    args.append('-o')
-    if out_dir is None:
-        out_dir = makeout()
-    args.append(out_dir)
-
-    stop_react2()
-    fab.sudo('setsid {}/react.py {} &>~/react.{}.out </dev/null &'.format(
-        project_path, ' '.join(args), fab.env.host), pty=False)
+    executable_path = f"sudo {PYTHON_PATH} -u {react_path}/react_multiprocessing.py {' '.join(arguments)}"
+    print(executable_path)
+    screen_start_session(conn, 'react', executable_path)
 
 
-@fab.task
-@fab.parallel
-def stop_cr_tuning():
-    screen_stop_session('cr_tuning')
+# TODO: Test and ensure the cr tuning works (if you need to, of course)
+@task
+def stop_cr_tuning(c):
+    """Stops cr tuning algorithm on all nodes. Untested!"""
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
 
-@fab.task
-@fab.parallel
-def run_cr_tuning(out_dir=None):
-    if out_dir is None:
-        # Don't use unique output directory (this case is just for testing)
-        out_dir = makeout(unique=False)
+    for conn in group:
+        screen_stop_session(conn, 'cr_tuning')
 
-    stop_cr_tuning()
-    screen_start_session('cr_tuning',
-            'sudo python2.7 -u {}/helpers/cr_tuning.py {}/react.csv'.format(
-                project_path, out_dir) +
-            ' || cat') # "or error, cat" keeps screen open for stdout inspection
+
+@task
+def run_cr_tuning(c, out_dir = None):
+    """Runs the cr tuning algorithm on all nodes. Untested!"""
+    global HOSTS
+    global PYTHON_PATH
+    global PROJECT_PATH
+
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        if out_dir is None:
+            # Don't use unique output directory (this case is just for testing)
+            out_dir = make_out_directory(conn, unique=False)
+
+        stop_cr_tuning(conn)
+
+        executable_path = f"sudo {PYTHON_PATH} -u {PROJECT_PATH}/helpers/cr_tuning.py {out_dir}/react.csv || cat"
+
+        screen_start_session(conn, 'cr_tuning', executable_path)
+        # screen_start_session(conn, 'cr_tuning',
+        #         'sudo python3 -u {}/helpers/cr_tuning.py {}/react.csv'.format(
+        #             project_path, out_dir) +
+        #         ' || cat') # "or error, cat" keeps screen open for stdout inspection
 
 ################################################################################
 # misc
 
-import socket
-import struct
 
 def dot2long(ip):
+    """Converts human readable IP address to a bit-packed machine format. """
     return struct.unpack("!L", socket.inet_aton(ip))[0]
 
+
 def long2dot(ip):
+    """Converts bit-packet machine IP address to human readable format. """
     return socket.inet_ntoa(struct.pack('!L', ip))
 
-def get_my_mac(dev='wls33'):
-    cmd = 'python -c' \
-            " 'from netifaces import *;" \
-            ' print ifaddresses("{}")[17][0]["addr"]\''
-    return fab.run(cmd.format(dev))
 
-def get_my_ip(dev='wls33'):
-    cmd = 'python -c' \
-            " 'from netifaces import *;" \
-            ' print ifaddresses("{}")[AF_INET][0]["addr"]\''
-    return fab.run(cmd.format(dev))
+@task
+def get_mac(conn, dev='wls33'):
+    """Gets the mac address of the device connected to with the given conn object. """
+    global PYTHON_PATH
+    cmd = f"{PYTHON_PATH} -c 'from netifaces import *; print(ifaddresses(\"{dev}\")[17][0][\"addr\"])'"
+    result = conn.run(cmd).stdout.splitlines()[0]
 
-@fab.task
-@fab.parallel
-def time_sync():
-    fab.sudo('service ntp stop')
-    fab.sudo('ntpdate time.nist.gov')
+    return result
 
-@fab.task
-@fab.parallel
-def rm_proxy():
-    fab.sudo('rm -f /etc/apt/apt.conf.d/01proxy')
 
-@fab.task
-@fab.parallel
-def yobooyathere():
-    fab.run(':')
+@task
+def get_my_ip(conn, dev = 'wls33'):
+    """Gets the IP address of the device connected to with the given conn object. """
+    global PYTHON_PATH
+    cmd = f"{PYTHON_PATH} -c 'from netifaces import *; print(ifaddresses(\"{dev}\")[AF_INET][0][\"addr\"])'"
+    result = conn.run(cmd).stdout.splitlines()[0]
+    return result
 
-################################################################################
-# screen
 
-def screen_start_session(name, cmd):
-    fab.run('screen -S {} -dm bash -c "{}"'.format(name, cmd), pty=False)
+@task
+def time_sync(c):
+    """Synchronizes the time among the nodes. This is imprecise, PTPd is better for precision. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run('sudo service ntp stop')
+    group.run('sudo ntpdate time.nist.gov')
 
-def screen_stop_session(name, interrupt=False):
-    with fab.settings(warn_only=True):
-        if interrupt:
-            fab.run('screen -S {} -p 0 -X stuff ""'.format(name))
-        else:
-            fab.run('screen -S {} -X quit'.format(name))
 
-def screen_list():
-    return fab.run('ls /var/run/screen/S-$(whoami)').split()
+@task
+def yobooyathere(c):
+    """A cheeky way to make sure you are connected to all the nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run(':')
+    group.run('echo hi')
 
-@fab.task
-def screen_stop_all():
-    with fab.settings(warn_only=True):
-        fab.run('screen -wipe')
 
-    sessions = screen_list()
-    for name in sessions:
-        screen_stop_session(name)
+@task
+def screen_start_session(conn, name, cmd):
+    """Start a screen session with the given command on the node connected to with the given conn object. """
+    conn.run(f'screen -S {name} -dm bash -c "{cmd}"', pty=False)
 
-################################################################################
-# iperf and roadtrip
 
-@fab.task
-def iperf_start_servers():
-    screen_start_session('iperf_server_udp', 'iperf -s -u')
-    screen_start_session('iperf_server_tcp', 'iperf -s')
+@task
+def screen_stop_session(conn, name, interrupt = False):
+    """Stop a screen session with the given name on the node connected to with the given conn object. """
+    if interrupt:
+        conn.run(f'screen -S {name} -p 0 -X stuff " "', warn=True)
+    else:
+        conn.run(f'screen -S {name} -X quit', warn=True)
 
-@fab.task
-def iperf_start_clients(host_out_dir, conn_matrix, tcp=False, rate='1G'):
-    for server in conn_matrix.links(get_my_ip()):
+
+@task
+def screen_stop_all(c):
+    """Stop all screen sessions on all nodes, except for PTPd sessions. """
+    global HOSTS
+
+    for host in HOSTS:
+        conn = Connection(host)
+        conn.run('screen -wipe', warn=True)
+
+        result = conn.run('ls /var/run/screen/S-$(whoami)')
+        sessions = result.stdout.strip().split()
+
+        for name in sessions:
+            if name.split('.')[1] != 'running' and name.split('.')[1] != 'ptpd':
+                screen_stop_session(conn, name)
+
+
+@task
+def iperf_start_servers(c):
+    """Starts UDP and TCP iperf servers on all of the nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        screen_start_session(conn, 'iperf_server_udp', 'iperf -s -u')
+        screen_start_session(conn, 'iperf_server_tcp', 'iperf -s')
+
+
+@task
+def iperf_start_clients(conn, host_out_dir, conn_matrix,
+                        tcp = False, rate = '50MMbps'):
+    """Starts iperf clients on the nodes. It uses the passed ConnMatrix to determine which IP address to send to. """
+    for server in conn_matrix.links(get_my_ip(conn)):
         cmd = 'iperf -c {}'.format(server)
-        if not(tcp):
+        if not tcp:
             cmd += ' -u -b {}'.format(rate)
         cmd += ' -t -1 -i 1 -yC'
 
         # Use -i (ignore signals) so that SIGINT propagted up pipe to iperf
         cmd += ' | tee -i {}/{}.csv'.format(host_out_dir, server)
 
-        screen_start_session('iperf_client', cmd)
+        screen_start_session(conn, 'iperf_client', cmd)
 
-@fab.task
-def iperf_stop_clients():
-    screen_stop_session('iperf_client', interrupt=True)
 
-@fab.task
-def roadtrip_start_servers():
-    # Roadtrip listens for TCP and UDP at the same time by default
-    screen_start_session('roadtrip_server', '~/bin/roadtrip -listen' \
-            ' &>>~/data/{}_roadtrip.log'.format(fab.env.host))
+@task
+def iperf_test(c):
+    """Tests iperf on one of the nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
 
-@fab.task
-def roadtrip_start_clients(host_out_dir, conn_matrix, tcp=False):
-    for server in conn_matrix.links(get_my_ip()):
-        args = []
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', '192.168.0.2')
+    cm.add('192.168.0.2', 'NONE')
 
-        args.append('-address')
-        args.append(server)
+    for conn in group:
+        iperf_start_clients(conn, "/users/{username}/", cm)
 
-        if not(tcp):
-            args.append('-udp')
 
-        cmd = '~/bin/roadtrip {} 2>&1 | tee -i {}/roadtrip_{}.csv'.format(
-                " ".join(args), host_out_dir, server)
+@task
+def iperf_stop_clients(c):
+    """Stops all iperf clients on all of the nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
 
-        screen_start_session('roadtrip_client', cmd)
+    for conn in group:
+        screen_stop_session(conn, 'iperf_client', interrupt=True)
 
-@fab.task
-def roadtrip_stop_clients():
-    screen_stop_session('roadtrip_client', interrupt=True)
 
-################################################################################
-# Multi-hop MAC address setup
-
-def collect_ip2mac_map(ip2mac):
-    ip2mac[dot2long(get_my_ip())] = get_my_mac()
-
-def sudo_ip_neigh_add(ip, mac):
-    if not(isinstance(ip, str)):
-        ip = long2dot(ip)
-
-    ip_neigh_add_cmd = 'ip neighbor add {} lladdr {} dev wls33 nud permanent'
-    fab.sudo(ip_neigh_add_cmd.format(ip, mac))
-
-def set_neighbors(ip2mac):
-    low_neigh = None
-    myip = dot2long(get_my_ip())
-    high_neigh = None
-
-    lower = []
-    higher = []
-
-    for ip in ip2mac.keys():
-        if ip + 1 == myip:
-            low_neigh = ip
-        elif ip - 1 == myip:
-            high_neigh = ip
-        elif ip < myip:
-            lower.append(ip)
-        elif ip > myip:
-            higher.append(ip)
-        else:
-            pass # ip == myip
-
-    fab.sudo('sysctl -w net.ipv4.ip_forward=1')
-    fab.sudo('ip link set dev wls33 arp off')
-    fab.sudo('ip neigh flush dev wls33')
-
-    if low_neigh is not None:
-        sudo_ip_neigh_add(low_neigh, ip2mac[low_neigh])
-        for ip in lower:
-            sudo_ip_neigh_add(ip, ip2mac[low_neigh])
-
-    if high_neigh is not None:
-        sudo_ip_neigh_add(high_neigh, ip2mac[high_neigh])
-        for ip in higher:
-            sudo_ip_neigh_add(ip, ip2mac[high_neigh])
-
-@fab.task
-@fab.runs_once
-def setup_multihop():
-    ip2mac = {}
-    fab.execute(collect_ip2mac_map, ip2mac)
-    fab.execute(set_neighbors, ip2mac)
-
-################################################################################
-# Multi-hop Reservations
-
-@fab.parallel
-def res_server_kickoff(ip2mac):
-
-    def get_if_in_ip2mac(ip):
-        if ip in ip2mac:
-            return long2dot(ip)
-        else:
-            return ""
-
-    myip = dot2long(get_my_ip())
-    n1 = get_if_in_ip2mac(myip - 1)
-    n2 = get_if_in_ip2mac(myip + 1)
-    myip = long2dot(myip)
-
-    screen_start_session('res_server',
-            'python2.7 -u' \
-            ' {}/reservation/reservation_server.py {} {} {}' \
-            ' &>>~/data/{}_res_server.log'.format(project_path, myip, n1, n2,
-            fab.env.host))
-
-@fab.task
-@fab.runs_once
-def res_server_start():
-    ip2mac = {}
-    fab.execute(collect_ip2mac_map, ip2mac)
-    fab.execute(res_server_kickoff, ip2mac)
-
-@fab.task
-@fab.parallel
-def res_server_stop():
-    screen_stop_session('res_server')
-
-################################################################################
-# start/stop exps and make output dirs
-
-@fab.task
-@fab.parallel
-def makeout(out_dir='/groups/wall2-ilabt-iminds-be/react/old_react/test', trial_dir=None, unique=True):
-    expanduser_cmd = "python -c 'import os; print os.path.expanduser(\"{}\")'"
-    out_dir = fab.run(expanduser_cmd.format(out_dir))
+@task
+def make_out_directory(conn, out_dir = '/groups/wall2-ilabt-iminds-be/react/data/test',
+                       trial_dir = None, unique = True):
+    """Makes an output directory at the given location. Does not overwrite directories,
+    instead will increment the counter and create a new directory each time called. """
+    expand_user_cmd = f"python -c 'import os; print(os.path.expanduser(\"{out_dir}\"))'"
+    out_dir = run(expand_user_cmd).stdout.splitlines()[0]
 
     i = 0
     while True:
-        subdirs = []
-        subdirs.append(out_dir)
-        subdirs.append('{:03}'.format(i))
+        sub_directories = [out_dir, '{:03}'.format(i)]
+
+        # subdirs = []
+        # subdirs.append(out_dir)
+        # subdirs.append('{:03}'.format(i))
         if trial_dir is not None:
-            subdirs.append(trial_dir)
-        subdirs.append(fab.env.host)
+            sub_directories.append(trial_dir)
+        sub_directories.append(conn.host)
 
-        host_out_dir = '/'.join(subdirs)
+        host_out_dir = '/'.join(sub_directories)
 
-        if not(unique) or not(exists(host_out_dir)):
+        if not unique or not(exists(conn, path=host_out_dir, runner=None)):
             break
 
-        i +=1
+        i += 1
 
-    fab.run('mkdir -p "{}"'.format(host_out_dir))
+    print(host_out_dir)
+    conn.run(f'mkdir -p {host_out_dir}')
     return host_out_dir
 
-@fab.task
-@fab.parallel
-def setup():
-    rm_proxy()
-    time_sync()
-    install_python_deps()
-    network(freq=5180)
-    iperf_start_servers()
-    roadtrip_start_servers()
 
-@fab.task
-@fab.parallel
-def stop_exp():
-    stop_react()
-    stop_react2()
-    iperf_stop_clients()
-    res_server_stop()
-    roadtrip_stop_clients()
-    stop_cr_tuning()
+@task
+def setup(c):
+    """Sets up all of the nodes. Includes time synchronization, creating the ad-hoc network,
+    and starting iperf servers. """
+    screen_stop_all(c)
+    time_sync(c)
+    network(c, frequency = 5180)
+    iperf_start_servers(c)
 
-################################################################################
-# topos
 
-def topo(tname, host_out_dir, tcp):
+@task
+def stop_exp(c):
+    """Stops experiment. Involves stopping all screen sessions and restarting iperf servers. """
+    screen_stop_all(c)
+    iperf_start_servers(c)
+
+
+@task
+def update_test(c, use):
+    """Experiment for testing the updates to react. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
+
     cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.1')
+    cm.add('192.168.0.4', r'192.168.0.1')
 
-    if tname == 'star':
-        cm.add('192.168.0.1', r'192.168.0.5')
-        cm.add('192.168.0.2', r'192.168.0.5')
-        cm.add('192.168.0.3', r'192.168.0.5')
-        cm.add('192.168.0.4', r'192.168.0.5')
-        cm.add('192.168.0.5', r'NONE')
-    elif tname == '3hop':
-        cm.add('192.168.0.1', r'192.168.0.2')
-        cm.add('192.168.0.2', r'192.168.0.3')
-        cm.add('192.168.0.3', r'192.168.0.2')
-        cm.add('192.168.0.4', r'192.168.0.3')
-    elif tname == 'bae':
-        cm.add('192.168.0.1', r'192.168.0.2')
-        cm.add('192.168.0.2', r'192.168.0.3')
-        cm.add('192.168.0.3', r'192.168.0.4')
-        cm.add('192.168.0.4', r'192.168.0.1')
-    else:
-        assert False, 'Topo does not exist right now mate'
+    out_dirs = {}
 
-    iperf_start_clients(host_out_dir, cm, tcp)
+    for conn in group:
+        out_dirs[conn.host] = make_out_directory(conn,
+                                                 f'/groups/wall2-ilabt-iminds-be/react/data/{update_test.__name__}',
+                                                 trial_dir=use)
 
-################################################################################
-# exps
+    print("starting Streams")
+    for conn in group:
+        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
 
-@fab.task
-@fab.runs_once
-def exp_betak(tname):
-    assert tname == 'star' or tname == '3hop' or tname == 'bae'
-
-    @fab.task
-    @fab.parallel
-    def betak(out_dir, tname, beta, k):
-        host_out_dir = makeout(out_dir, '{:03}-{:04}'.format(int(beta*100), k))
-        run_react(host_out_dir, 'new', beta, k)
-        topo(tname, host_out_dir, False)
-
-    betas = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
-
-    for beta in betas:
-        for k in range(250, 3250, 250):
-            fab.execute(betak, '~/data/97_betak/{}'.format(tname), tname,
-                    beta, k)
-            time.sleep(15)
-            fab.execute(stop_exp)
-
-@fab.task
-@fab.runs_once
-def exp_comp(tname):
-
-    @fab.task
-    @fab.parallel
-    def comp(out_dir, tname, use):
-        host_out_dir = makeout(out_dir, use)
+    print("Starting REACT")
+    for conn in group:
         if use != 'oldest':
-            run_react(host_out_dir, use)
-        else:
-            run_react2(host_out_dir)
-        topo(tname, host_out_dir, False)
+            run_react(conn, out_dir=out_dirs[conn.host], tuner=use)
 
-    for use in  ['dot', 'new', 'old', 'oldest']:
-        fab.execute(comp, "~/data/96_comp/{}".format(tname), tname, use)
-        time.sleep(120)
-        fab.execute(stop_exp)
+    print("Collecting measurements")
 
-@fab.task
-@fab.runs_once
-def exp_multi():
-    ip2mac = {}
-    fab.execute(collect_ip2mac_map, ip2mac)
+    time.sleep(120)
 
-    last = None
-    for ip in ip2mac:
-        if last is None or ip > last:
-            last = ip
-    last = long2dot(last)
+    print('Stopping experiment')
+    stop_exp(c)
 
-    def multi_makeout(use, tcp):
-        return makeout('~/data/95_multi/', '{}-{}-{}'.format(len(ip2mac), use,
-                'tcp' if tcp else 'udp'))
 
-    @fab.task
-    @fab.parallel
-    def multi(use, tcp):
-        host_out_dir = multi_makeout(use, tcp)
+@task
+def update_test_qos(c, use):
+    """Experiment for testing QoS functionality of react. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
 
-        if use == 'new':
-            status = json.loads(fab.run(
-                    '{}/reservation/reserver.py get_status {}'.format(
-                    project_path, get_my_ip())))
-            capacity = float(status['capacity'])/100.0
-            allocation = float(status['allocation'])/100.0
-            run_react(host_out_dir, use, capacity=capacity, prealloc=allocation)
-        else:
-            run_react(host_out_dir, use)
-
-        cm = ConnMatrix()
-        cm.add('192.168.0.1', last)
-        cm.add(last, r'NONE')
-        roadtrip_start_clients(host_out_dir, cm, tcp)
-
-    for use in  ['dot', 'new']:
-        for tcp in [True, False]:
-            for i in xrange(10):
-                if use == 'new':
-                    fab.execute(res_server_kickoff, ip2mac)
-                    time.sleep(1) # wait for server to start
-
-                    resp = fab.run(
-                            '{}/reservation/reserver.py place_reservation' \
-                            ' 192.168.0.1 {} 26'.format(project_path, last))
-                    assert json.loads(resp)['placed']
-
-                fab.execute(multi, use, tcp)
-                time.sleep(120)
-                fab.execute(stop_exp)
-
-@fab.task
-@fab.parallel
-def exp_4con(use):
-    assert(use == "dot" or use == "new" or use == "old" or use == 'oldest')
-
-    host_out_dir = makeout('/groups/wall2-ilabt-iminds-be/react/old_react/data/01_4con', use)
+    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm, tcp=True)
 
-    if use != 'oldest':
-        run_react(host_out_dir, use)
-    else:
-        run_react2(host_out_dir)
+    out_dirs = {}
 
-@fab.task
-@fab.parallel
-def exp_line(use):
-    assert(use == "dot" or use == "new" or use == "old")
+    for conn in group:
+        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/update_test',
+                                                 trial_dir=use)
 
-    host_out_dir = makeout('~/data/10_line', use)
+    print('starting REACT')
+    for conn in group:
+        if use != 'oldest':
+            if conn.host == 'zotacD1':
+                run_react(conn, out_dirs[conn.host], use, capacity=0.5, qos=True)
+            else:
+                run_react(conn, out_dirs[conn.host], use)
 
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.4')
-    iperf_start_clients(host_out_dir, cm)
+    print('Waiting for REACT to converge')
+    time.sleep(20)
+    for conn in group:
+        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
 
-    run_react(host_out_dir, use)
+    print("Collecting measurements")
 
-@fab.task
-@fab.parallel
-def exp_longline(dot, udp=True, flows=1):
-    #NAME = '{}lowflow'.format(flows)
-    NAME = 'manyflow'.format(flows)
+    time.sleep(120)
 
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2$')
-    cm.add('192.168.0.2', r'192.168.0.1$')
-    cm.add('192.168.0.3', r'192.168.0.4$')
-    cm.add('192.168.0.4', r'192.168.0.3$')
-    cm.add('192.168.0.5', r'192.168.0.6$')
-    cm.add('192.168.0.6', r'192.168.0.5$')
-    cm.add('192.168.0.7', r'192.168.0.8$')
-    cm.add('192.168.0.8', r'192.168.0.7$')
-    cm.add('192.168.0.9', r'192.168.0.10$')
-    cm.add('192.168.0.10', r'192.168.0.9$')
+    print('Stopping Experiment')
+    stop_exp(c)
 
-    trial = '{}_{}_{}'.format(NAME, 'udp' if udp else 'tcp',
-            'dot' if dot else 'new')
-    host_out_dir = makeout('~/data/11_longline', trial)
 
-    iperf_start_clients(host_out_dir, cm, tcp=not(udp))
-    #iperf_start_clients(host_out_dir, cm, rate='1M')
-    run_react(host_out_dir, 'dot' if dot else 'new')
+@task
+def test_react(c, use):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
 
-@fab.task
-@fab.runs_once
-def runner():
-    for dot in [True, False]:
-        for udp in [True, False]:
-        #for flows in [1, 2]:
-            fab.execute(exp_longline, dot, udp=udp)
-            time.sleep(240)
-            fab.execute(stop_exp)
-
-@fab.task
-@fab.parallel
-def exp_concept(enable_react):
-    enable_react = bool(strtobool(enable_react))
-
-    subdir = 'react_on' if enable_react else 'react_off'
-    host_out_dir = makeout('~/data/01_concept', subdir)
+    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
     cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
 
-    run_react(host_out_dir, 'new' if enable_react else None)
+    out_dirs = {}
 
-@fab.task
-@fab.parallel
-def exp_graph2():
-    host_out_dir = makeout('~/data/98_graph2')
+    for conn in group:
+        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/update_test',
+                                                 trial_dir=use)
 
-    nodes = range(len(fab.env.hosts))
-    random.shuffle(nodes)
+    print('starting REACT')
+    for conn in group:
+        if use != 'oldest':
+            run_react(conn, out_dirs[conn.host], use)
 
-    cmd = 'ping -c 100 -I wls33 192.168.0.{0} > {1}/192.168.0.{0}'
-    for n in nodes:
-        with fab.settings(warn_only=True):
-            fab.run(cmd.format(n + 1, host_out_dir))
+    print('Waiting for REACT to converge')
+    time.sleep(20)
 
-@fab.task
-@fab.parallel
-def exp_cr_tuning(trial):
-    assert trial in ('dot', 'new', 'cr')
-    host_out_dir = makeout('~/data/42_cr_tuning', trial)
-
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
-
-    if trial in ('dot', 'new'):
-        run_react(host_out_dir, tuner=trial)
-    else:
-        run_cr_tuning(host_out_dir)
-
-@fab.task
-@fab.parallel
-def exp_test(enable_react=False):
-    if isinstance(enable_react, basestring):
-        enable_react = bool(strtobool(enable_react))
-
-    host_out_dir = makeout()
-
-    cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.1')
-    #cm.add('192.168.0.3', r'192.168.0.4')
-    #cm.add('192.168.0.4', r'192.168.0.1')
-    iperf_start_clients(host_out_dir, cm)
-
-    if enable_react:
-        run_react(host_out_dir)
+    print('Stopping Experiment')
+    stop_exp(c)

@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
-from __future__ import division
-
 import sys
 import time
 
-from tuning import TunerBase
-from collision_rate import CollisionRateObserver
-from airtime import AirtimeObserver
+from helpers.tuning import TunerBase
+from helpers.collision_rate import CollisionRateObserver
+from helpers.airtime import AirtimeObserver
 
 class TunerCollisionRate(TunerBase):
 
