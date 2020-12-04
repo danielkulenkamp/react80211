@@ -14,8 +14,9 @@ from distutils.util import strtobool
 
 fn_map = {}
 
+
 def cmd(wrapped):
-    fn_map[wrapped.func_name] = wrapped
+    fn_map[wrapped.__name__] = wrapped
     return wrapped
 
 @cmd
@@ -30,7 +31,7 @@ def load_react_csv_data(node_dir, x_index, y_index):
     assert len(node_dirs) == len(paths) and len(paths) != 0, \
             'Is there a missing react.csv file?'
 
-    for i in xrange(len(paths)):
+    for i in range(len(paths)):
         path = paths[i]
         x_list.append(np.loadtxt(path, delimiter=',', usecols=(x_index,)))
         y_list.append(np.loadtxt(path, delimiter=',', usecols=(y_index,)))
@@ -57,11 +58,11 @@ def plot_react_csv_data(node_dir, y_index):
 
     first, last = get_xlim(x_list)
     for x in x_list:
-        for i in xrange(len(x)):
+        for i in range(len(x)):
             x[i] = x[i] - first
     plt.xlim([0, last - first])
 
-    for i in xrange(len(x_list)):
+    for i in range(len(x_list)):
         plt.plot(x_list[i], y_list[i], label=node_list[i])
 
 @cmd
@@ -80,7 +81,7 @@ def plot_react(node_dir, col='airtime', ylim=1.0, save=None, title=None):
     else:
         assert False, 'Not a valid react.csv column'
 
-    if isinstance(ylim, basestring):
+    if isinstance(ylim, str):
         ylim = float(ylim)
 
     plot_react_csv_data(node_dir, col)
@@ -110,7 +111,7 @@ def converge_time(node_dir, cv_threshold):
     first, _ = get_xlim(x_list)
 
     # all y should start at same x and be same length
-    for i in xrange(len(x_list)):
+    for i in range(len(x_list)):
         x = x_list[i]
 
         first_i = 0
@@ -119,12 +120,12 @@ def converge_time(node_dir, cv_threshold):
         y_list[i] = y_list[i][first_i:]
 
     min_len = min(map(len, y_list))
-    for i in xrange(len(y_list)):
+    for i in range(len(y_list)):
         y_list[i] = y_list[i][:min_len]
 
     data = np.column_stack(y_list)
 
-    for i in xrange(len(data[...,0])):
+    for i in range(len(data[...,0])):
         # coefficient of variation
         cv = data[i:].std(axis=0) / data[i:].mean(axis=0)
 
@@ -137,11 +138,11 @@ def converge_time(node_dir, cv_threshold):
 @cmd
 def convergence(node_dir, threshold=0.1):
     threshold = float(threshold)
-    print converge_time(node_dir, threshold)
+    print(converge_time(node_dir, threshold))
 
 @cmd
 def heatmap(out_dir, threshold=0.1):
-    print out_dir
+    print(out_dir)
     threshold = float(threshold)
 
     beta_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
@@ -149,7 +150,7 @@ def heatmap(out_dir, threshold=0.1):
 
     low = (None, None, None)
     a = []
-    for i in xrange(len(beta_list)):
+    for i in range(len(beta_list)):
         beta = beta_list[i]
 
         row = []
@@ -162,10 +163,10 @@ def heatmap(out_dir, threshold=0.1):
 
             row.append(ct)
 
-        print row
+        print(row)
         a.append(row)
 
-    print low
+    print(low)
 
     _, ax = plt.subplots()
     ax.set_xticks(range(len(k_list)))
@@ -212,7 +213,7 @@ def plot_thr(trial_dir, proto='tcp', plot=True):
 
     # Convert to mbps
     throughput = map(lambda bps: bps/1000.0/1000.0, throughput)
-    print throughput
+    print(throughput)
 
     objects = ('802.11', 'New Tuning')
     y_pos = np.arange(len(objects))
@@ -259,7 +260,7 @@ def get_graphs(node_dir):
                 from_node = ip_to_node[parts[4]]
 
             if re.search('packet loss', line):
-                for i in xrange(len(parts)):
+                for i in range(len(parts)):
                     if parts[i] == 'packet':
                         assert packet_loss is None, \
                                 'More than one line with "packet loss" in it?'
@@ -311,7 +312,7 @@ def find_paths(node_dir, length=4):
 
     def check(p):
         if len(p) - 1 == length:
-            print p
+            print(p)
             return
 
         for n in G100:
@@ -324,7 +325,7 @@ def find_paths(node_dir, length=4):
 
 @cmd
 def find_star(node_dir, plot=False):
-    if isinstance(plot, basestring):
+    if isinstance(plot, str):
         plot = bool(strtobool(plot))
 
     G100, Gall = get_graphs(node_dir)
@@ -348,7 +349,7 @@ def find_star(node_dir, plot=False):
             if plot:
                 nx.draw_networkx(G100.subgraph(nodes))
                 plt.show()
-            print nodes
+            print(nodes)
 
 @cmd
 def plot_network(node_dir):
@@ -452,9 +453,9 @@ def comp_thr(unused):
     old_thr = map(kbps, get_server_report(old_dir, nodes, 8))
     new_thr = map(kbps, get_server_report(new_dir, nodes, 8))
 
-    print dot_thr
-    print old_thr
-    print new_thr
+    print(dot_thr)
+    print(old_thr)
+    print(new_thr)
 
     comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Throughput', 'kbps')
 
@@ -469,12 +470,12 @@ def comp_aggthr(unused):
     old_thr = map(kb, get_server_report(old_dir, nodes, 7))
     new_thr = map(kb, get_server_report(new_dir, nodes, 7))
 
-    print dot_thr
-    print old_thr
-    print new_thr
+    print(dot_thr)
+    print(old_thr)
+    print(new_thr)
 
     agg = [sum(dot_thr), sum(old_thr), sum(new_thr)]
-    print agg
+    print(agg)
 
     objects = ('802.11', 'Old Tuning', 'New Tuning')
     y_pos = np.arange(len(objects))
@@ -494,9 +495,9 @@ def comp_jitter(unused):
     old_thr = get_server_report(old_dir, nodes, 9)
     new_thr = get_server_report(new_dir, nodes, 9)
 
-    print dot_thr
-    print old_thr
-    print new_thr
+    print(dot_thr)
+    print(old_thr)
+    print(new_thr)
 
     comp_barchart([dot_thr, old_thr, new_thr], nodes, 'Jitter', 'ms')
 
@@ -508,9 +509,9 @@ def comp_drop(unused):
     old_thr = get_server_report(old_dir, nodes, 12)
     new_thr = get_server_report(new_dir, nodes, 12)
 
-    print dot_thr
-    print old_thr
-    print new_thr
+    print(dot_thr)
+    print(old_thr)
+    print(new_thr)
 
     comp_barchart([dot_thr, new_thr, old_thr], nodes, 'Drop Rate', '%')
 
@@ -524,7 +525,7 @@ if __name__ == '__main__':
         assert len(sys.argv) >= 3, 'Not enough arguments'
 
         dirs = []
-        for i in xrange(1, len(sys.argv)):
+        for i in range(1, len(sys.argv)):
             arg = sys.argv[i]
 
             if arg == '--':
@@ -538,7 +539,7 @@ if __name__ == '__main__':
         fn_name = sys.argv[i + 1]
         assert fn_name in fn_map, 'Bad function name: {}'.format(fn_name)
 
-        for j in xrange(i + 2, len(sys.argv)):
+        for j in range(i + 2, len(sys.argv)):
             arg = sys.argv[j]
             parts = arg.split('=')
 
@@ -552,14 +553,13 @@ if __name__ == '__main__':
 
             override[key] = value
     except AssertionError as e:
-        print 'Error: ' + e.message
-        print 'Usage: data.py DIR [DIR...] -- CMD [override[=value]' \
-                ' [override[=value]...]]'
-        print
-        print 'Functions:'
-        print '    ' + '\n    '.join(fn_map.keys())
-        exit()
+        print(f'Error: {e}')
+        print('Usage: data.py DIR [DIR...] -- CMD [override[=value] [override[=value]...]]')
+        print()
+        print('Functions:')
+        print('    ' + '\n    '.join(fn_map.keys()))
+        sys.exit()
 
     for d in dirs:
-        print d
+        print(d)
         fn_map[fn_name](d, **override)

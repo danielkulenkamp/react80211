@@ -6,6 +6,7 @@ import argparse
 
 from helpers.observer import Observer
 
+
 def iw_survey_dump(dev):
     cmd = ['iw', dev, 'survey', 'dump']
     output = subprocess.check_output(cmd).decode("utf-8").split()
@@ -36,10 +37,12 @@ def iw_survey_dump(dev):
 
     return survey
 
+
 class ChannelObserver(Observer):
 
     def __init__(self, dev='wls33'):
         super(ChannelObserver, self).__init__(iw_survey_dump, dev)
+
 
 class AirtimeObserver(Observer):
 
@@ -56,6 +59,7 @@ class AirtimeObserver(Observer):
             return transmit/active
         else:
             return 0.0
+
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(

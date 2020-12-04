@@ -1,6 +1,7 @@
 *.pyc
 node_info.txt
-data/
+edata/
 venv/
 .idea/
 .DS_Store
+misc/

@@ -6,6 +6,7 @@ from multiprocessing import Process, Queue, Lock
 import getopt
 import json
 import re
+import math
 from typing import List
 
 import netifaces
@@ -13,7 +14,8 @@ from scapy.layers.dot11 import RadioTap
 from scapy.layers.dot11 import Dot11
 from scapy.sendrecv import sendp, sniff
 from helpers.airtime import AirtimeObserver
-from helpers.tuning import TunerNew, TunerOld, TunerBase
+from helpers.tuning import TunerSALT, TunerRENEW, TunerBase
+from react_algorithm import REACT
 
 processes = []
 
@@ -31,43 +33,20 @@ def signal_handler(sig, frame):
 
 
 def react_updater(sender_queue: Queue, sniffer_queue: Queue, cw_queue: Queue, console_lock: Lock,
-                  my_mac: str, debug: bool, initial_claim: float, sleep_time: float) -> None:
+                  my_mac: str, debug: bool, qos: bool, maximum_capacity: float, initial_claim: float,
+                  sleep_time: float) -> None:
     if debug:
         with console_lock:
             print("react_updater: process started")
 
-    neigh_list = {}
+    if qos:
+        react = REACT(my_mac, capacity=maximum_capacity, be_magnitude=0, qos_magnitude=initial_claim)
+    else:
+        react = REACT(my_mac, capacity=maximum_capacity, be_magnitude=initial_claim, qos_magnitude=0)
 
-    init_pkt = {
-        'claim': 0,
-        't': 0,
-        'offer': initial_claim,
-    }
-
-    neigh_list[my_mac] = init_pkt
-
-    def update_offer() -> None:
-        done = False
-        a = initial_claim
-        d = [key for key, val in neigh_list.items()]
-        d_star = []
-        while not done:
-            d_diff = list(set(d) - set(d_star))
-            if set(d) == set(d_star):
-                done = True
-                neigh_list[my_mac]['offer'] = a + max([val['claim'] for key, val in neigh_list.items()])
-            else:
-                done = True
-                neigh_list[my_mac]['offer'] = a / float(len(d_diff))
-                for b in d_diff:
-                    if neigh_list[b]['claim'] < neigh_list[my_mac]['offer']:
-                        d_star.append(b)
-                        a -= neigh_list[b]['claim']
-                        done = False
-
-    def update_claim() -> None:
-        off_w = [val['offer'] for key, val in neigh_list.items()]
-        neigh_list[my_mac]['claim'] = min(off_w)
+    if debug:
+        with console_lock:
+            react.print_all_offers()
 
     # first check sniffer queue
     # then update state
@@ -80,38 +59,57 @@ def react_updater(sender_queue: Queue, sniffer_queue: Queue, cw_queue: Queue, co
         # pull a packet from the sniffer queue
         # save the packet
         if not sniffer_queue.empty():
-            pkt = sniffer_queue.get(False)
-            neigh_list[pkt[0]] = pkt[1]
+            neigh_name, packet = sniffer_queue.get(False)
+            react.new_be_offer(neigh_name, packet['be_offer'])
+
+            if math.isclose(0, packet['be_claim']):
+                # we have a qos claim
+                react.new_qos_claim(neigh_name, packet['qos_claim'])
+            else:
+                # we have a be claim
+                react.new_be_claim(neigh_name, packet['be_claim'])
+
+            for dictionary in packet['qos']:
+                if dictionary['sta_name'] == react.name:
+                    react.new_qos_offer(neigh_name, dictionary['qos_offer'])
+
         else:
             if debug:
                 with console_lock:
                     print(f"react_updater: couldn't pull packet from queue")
 
         # update_claim, update_offer
-        update_offer()
-        update_claim()
+        react.update_offer()
+        react.update_claim()
 
         # create packet to send to
-        neigh_list[my_mac]['t'] = float(time.time())
-        pkt_to_send = {
-            'claim': neigh_list[my_mac]['claim'],
-            't': neigh_list[my_mac]['t'],
-            'offer': neigh_list[my_mac]['offer']
-        }
+        pkt_to_send = {}
+        react.update_timestamp()
+        pkt_to_send['t'] = react.get_timestamp()
+        pkt_to_send['be_offer'] = react.get_be_offer()
+        pkt_to_send['be_claim'] = react.get_be_claim()
+        pkt_to_send['qos_claim'] = react.get_qos_claim()
+
+        items = react.qos_items()
+
+        qos_offers = []
+        for offer in items:
+            sta = {
+                'sta_name': offer[0],
+                'qos_offer': offer[1],
+            }
+            qos_offers.append(sta)
+
+        pkt_to_send['qos'] = qos_offers
 
         json_data = json.dumps(pkt_to_send)
         sender_queue.put(json_data)
 
         # check dead nodes
         timeout = 120
-        for key, val in neigh_list.items():
-            if float(time.time()) - val['t'] > timeout:
-                if debug:
-                    with console_lock:
-                        print(f"Node {key} timeout -- removed")
-                neigh_list.pop(key)
+        react.check_timeouts(timeout)
 
-        cw_queue.put(neigh_list[my_mac]['claim'])
+        cw_queue.put(react.get_claim())
 
 
 def sender(queue: Queue, console_lock: Lock, my_mac: str, i_time: float,
@@ -199,17 +197,21 @@ def cw_updater(queue: Queue, console_lock: Lock, data_path: str, enable_react: b
     current_claim = initial_claim
 
     if enable_react:
-        assert (which_tuner == 'new' or which_tuner == 'old')
-        if which_tuner == 'new':
-            tuner = TunerNew(interface, log_file, cw_initial, beta, k)
+        assert (which_tuner == 'salt' or which_tuner == 'renew')
+        if which_tuner == 'salt':
+            tuner = TunerSALT(interface, log_file, cw_initial, beta, k)
+        elif which_tuner == 'renew':
+            tuner = TunerRENEW(interface, log_file, cw_initial)
         else:
-            tuner = TunerOld(interface, log_file, cw_initial)
+            raise Exception("Unknown tuner type!")
     else:
         tuner = TunerBase(interface, log_file)
 
     ao = AirtimeObserver()
     while True:
         s = sleep_time - ((time.time() - start_time) % sleep_time)
+        s = 1
+
         with console_lock:
             print(f"s time: {s}")
         time.sleep(s)
@@ -233,8 +235,8 @@ def usage(in_opt: str, ext_in_opt: List[str]) -> None:
 
 
 def main() -> None:
-    ext_in_opt = ["help", "tdelay=", "iperf_rate=", "enable_react=", "output_path=", "capacity="]
-    in_opt = "ht:r:e:o:c:"
+    ext_in_opt = ["help", "tdelay=", "iperf_rate=", "enable_react=", "output_path=", "claim=", "qos="]
+    in_opt = "ht:r:e:o:c:q:"
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], in_opt, ext_in_opt)
@@ -244,75 +246,39 @@ def main() -> None:
         usage(in_opt, ext_in_opt)
         sys.exit(2)
 
-    script_source = '\n \
-    #! /bin/bash \n \
-    #phy_iface="phy0" \n \
-    phy_iface="$1" \n \
-    sleeptime="$2" \n \
-    labels=$(ls /sys/kernel/debug/ieee80211/${phy_iface}/statistics/) \n \
-    arr_label=($labels) \n \
-    #sleeptime=2 \n \
-    line="" \n \
-    stats=$(cat /sys/kernel/debug/ieee80211/${phy_iface}/statistics/*) \n \
-    arr_stats_start=($stats); \n \
-    #sleep $sleeptime \n \
-    #stats=$(cat /sys/kernel/debug/ieee80211/${phy_iface}/statistics/*) \n \
-    #arr_stats_stop=($stats); \n \
-    printf "{" \n \
-    for ((i=0;i<${#arr_label[@]} ;i++)) { \n \
-    #diff=$(( ${arr_stats_stop[$i]} - ${arr_stats_start[$i]} )); \n \
-    diff=${arr_stats_start[$i]} \n \
-    if [ $i -eq $(( ${#arr_label[@]} - 1 )) ]; then \n \
-            printf "\'%s\' : %s " "${arr_label[$i]}"  "$diff" \n \
-    else \n \
-            printf "\'%s\' : %s, " "${arr_label[$i]}" "$diff" \n \
-    fi \n \
-    } \n \
-    printf "}" \n \
-    ack_fail=$(( ${arr_stats_stop[0]} - ${arr_stats_start[0]} )) \n \
-    tx_completed=$(( ${arr_stats_stop[12]} - ${arr_stats_start[12]} )) \n \
-    rts_failed=$(( ${arr_stats_stop[2]} - ${arr_stats_start[2]} )) \n \
-    rts_success=$(( ${arr_stats_stop[3]} - ${arr_stats_start[3]} )) \n \
-    '
-
     debug = True
 
     i_time: float = 0.1
     interface: str = 'wls33'
     mon_interface = 'mon0'
-    iperf_rate = 0
     enable_react = False
     tuner = None
     data_path = ""
     start_time = time.time()
     sleep_time = i_time
-    claim_capacity = 0.8
-    initial_claim: float = 1
+    maximum_capacity = 1
+    offered_capacity = 0.8
+    initial_claim: float = maximum_capacity
     beta = 0.6
     k = 500
+    qos = False
 
     for o, a in opts:
         if o in ("-t", "--tdelay"):
             i_time = float(a)
-        if o in ("-r", "--iperf_rate"):
-            iperf_rate = float(a)
         if o in ("-e", "--enable_react"):
             enable_react = True
             tuner = a
         if o in ("-o", "--output_path"):
             print("HERE")
             data_path = str(a)
-        if o in ("-c", "--capacity"):
-            claim_capacity = float(a)
+        if o in ("-c", "--claim"):
+            initial_claim = float(a)
+        if o in ("-q", "--qos"):
+            qos = bool(a)
         elif o in ("-h", "--help"):
             usage(in_opt, ext_in_opt)
             sys.exit()
-
-    # INIT REACT INFO
-    f_name = '/tmp/ieee_stats.sh'
-    ff = open(f_name, 'w')
-    ff.write(script_source)
-    ff.close()
 
     global processes
     # we need a queue for each of the three communication paths
@@ -327,21 +293,35 @@ def main() -> None:
 
     my_mac = str(netifaces.ifaddresses(interface)[netifaces.AF_LINK][0]['addr'])
 
-    print(f"REACT: data path: {data_path}")
     # setup the processes
-    sender_process = Process(target=sender, args=(sender_queue, lock, my_mac, i_time, start_time, debug))
-    sniffer_process = Process(target=sniffer, args=(sniffer_queue, lock, i_time, my_mac, mon_interface, debug))
-    cw_process = Process(target=cw_updater, args=(cw_queue, lock, data_path, enable_react, tuner,
-                                                  sleep_time, start_time, claim_capacity, initial_claim, interface,
-                                                  beta, k, debug))
-    react_updater_process = Process(target=react_updater, args=(sender_queue, sniffer_queue, cw_queue, lock, my_mac,
-                                                                debug, initial_claim, sleep_time))
+    sender_process = Process(
+        target=sender,
+        args=(sender_queue, lock, my_mac, i_time, start_time, debug)
+    )
+
+    sniffer_process = Process(
+        target=sniffer,
+        args=(sniffer_queue, lock, i_time, my_mac, mon_interface, debug)
+    )
+
+    cw_process = Process(
+        target=cw_updater,
+        args=(cw_queue, lock, data_path, enable_react, tuner, sleep_time, start_time,
+              offered_capacity, initial_claim, interface, beta, k, debug)
+    )
+
+    react_updater_process = Process(
+        target=react_updater,
+        args=(sender_queue, sniffer_queue, cw_queue, lock, my_mac, debug, qos, maximum_capacity,
+              initial_claim, sleep_time)
+    )
 
     if enable_react:
         processes = [sender_process, sniffer_process, cw_process, react_updater_process]
     else:
         processes = [cw_process]
 
+    print(f'Num threads: {len(processes)}')
     for process in processes:
         process.start()
 

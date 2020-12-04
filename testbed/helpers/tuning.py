@@ -25,14 +25,13 @@ class TunerBase(object):
         self.log_file = log_file
 
     def set_cw(self, cw):
-        qumId = 1 #BE
+        qumId = 1  # BE
         aifs = 2
         cwmin = int(cw)
         cwmax = int(cw)
         burst = 0
 
-        txq_params_msg = '{} {} {} {} {}'.format(qumId, aifs, cwmin, cwmax,
-                burst)
+        txq_params_msg = '{} {} {} {} {}'.format(qumId, aifs, cwmin, cwmax, burst)
         f_cw = open(self.txq_params_fname, 'w')
         f_cw.write(txq_params_msg)
         f_cw.close()
@@ -45,10 +44,11 @@ class TunerBase(object):
     def update_cw(self, alloc, airtime):
         self.log(alloc, airtime, -1, -1, self.cr_observer.collision_rate())
 
-class TunerNew(TunerBase):
+
+class TunerSALT(TunerBase):
 
     def __init__(self, iface, log_file, cw_init, beta, k):
-        super(TunerNew, self).__init__(iface, log_file)
+        super(TunerSALT, self).__init__(iface, log_file)
 
         self.cr_observer = CollisionRateObserver(iface)
 
@@ -70,17 +70,16 @@ class TunerNew(TunerBase):
         cw = 1023 if cw > 1023 else cw
         self.set_cw(cw)
 
-        self.log(alloc, airtime, self.cw_prev, cw,
-                self.cr_observer.collision_rate())
+        self.log(alloc, airtime, self.cw_prev, cw, self.cr_observer.collision_rate())
         self.cw_prev = cw
 
-class TunerOld(TunerBase):
+
+class TunerRENEW(TunerBase):
 
     def __init__(self, iface, log_file, cw_init):
-        super(TunerOld, self).__init__(iface, log_file)
+        super(TunerRENEW, self).__init__(iface, log_file)
 
-        self.cmd = ['cat', '/sys/kernel/debug/ieee80211/phy0/statistics/'
-                'dot11RTSSuccessCount']
+        self.cmd = ['cat', '/sys/kernel/debug/ieee80211/phy0/statistics/dot11RTSSuccessCount']
 
         self.cr_observer = CollisionRateObserver(iface)
 
@@ -107,26 +106,27 @@ class TunerOld(TunerBase):
                 self.cr_observer.collision_rate())
         self.cw_prev = cw
 
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description='New CW tuning implementation.',
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+                                formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('-k', action='store', default=200.0, type=float,
-            help='k-multiplier for airtime tuning')
+                   help='k-multiplier for airtime tuning')
     p.add_argument('-n', '--no_tuning', action='store_true',
-            help="don't actually do any tuning (but still log airtime)")
+                   help="don't actually do any tuning (but still log airtime)")
     p.add_argument('-c', '--cw_initial', action='store', default=0, type=int,
-            help='initial CW value')
+                   help='initial CW value')
     p.add_argument('-t', '--sleep_time', action='store', default=1.0,
-            type=float, help='length (in seconds) of observation interval')
+                   type=float, help='length (in seconds) of observation interval')
     p.add_argument('-a', '--airtime_alloc', action='store', default=0.20,
-            type=float, help='airtime allocated to this node via REACT')
+                   type=float, help='airtime allocated to this node via REACT')
     args = p.parse_args()
 
     if args.no_tuning:
         # TODO: change this back to TunerBase??
-        tuner = TunerOld('wls33', sys.stdout, args.cw_initial)
+        tuner = TunerBase('wls33', sys.stdout, args.cw_initial)
     else:
-        tuner = TunerNew('wls33', sys.stdout, args.cw_initial, 0.5, args.k)
+        tuner = TunerSALT('wls33', sys.stdout, args.cw_initial, 0.5, args.k)
 
     ao = AirtimeObserver()
     while True:

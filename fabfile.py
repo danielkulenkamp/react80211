@@ -153,24 +153,25 @@ def stop_react(conn):
 
 
 @task
-def run_react(conn, out_dir=None, tuner='new', beta=0.6,
-              k = 500, capacity = 0.80, pre_allocation=0, qos=False,
+def run_react(conn, out_dir=None, tuner='salt', beta=0.6,
+              k = 500, claim = 0.80, pre_allocation=0, qos=False,
               interface='wls33'):
     """Starts react on the node connected to with the given conn parameter."""
     global PROJECT_PATH
     global PYTHON_PATH
 
     # arguments = ['-i', interface, '-t', '0.1', '-r', '6000', '-b', str(beta), '-k', str(k)]
-    arguments = ['-t', '0.1', '-r', '6000']
+    arguments = ['-t', '0.1']
+
     if qos:
         arguments.append('-q')
-        arguments.append(str(capacity))
-    else:
-        arguments.append('-c')
-        arguments.append(str(capacity))
+        arguments.append('True')
+
+    arguments.append('-c')
+    arguments.append(str(claim))
 
     # Without a tuner REACT is disabled and we just collect airtime data
-    if tuner == 'new':
+    if tuner == 'salt' or tuner == 'renew':
         arguments.append('-e')
         arguments.append(tuner)
 
@@ -184,7 +185,7 @@ def run_react(conn, out_dir=None, tuner='new', beta=0.6,
 
     stop_react(conn)
 
-    executable_path = f"sudo {PYTHON_PATH} -u {react_path}/react_multiprocessing.py {' '.join(arguments)}"
+    executable_path = f"sudo {PYTHON_PATH} -u {react_path}/react.py {' '.join(arguments)}"
     print(executable_path)
     screen_start_session(conn, 'react', executable_path)
 
@@ -411,7 +412,7 @@ def update_test(c, use):
     """Experiment for testing the updates to react. """
     global HOSTS
     group = ThreadingGroup(*HOSTS)
-    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
+    assert (use == "dot" or use == "salt" or use == "renew")
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -432,7 +433,45 @@ def update_test(c, use):
 
     print("Starting REACT")
     for conn in group:
-        if use != 'oldest':
+        run_react(conn, out_dir=out_dirs[conn.host], tuner=use)
+
+    print("Collecting measurements")
+
+    time.sleep(120)
+
+    print('Stopping experiment')
+    stop_exp(c)
+
+
+@task
+def update_test_diff(c, use):
+    """Experiment for testing the updates to react. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    assert (use == "dot" or use == "salt" or use == "renew")
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2')
+    cm.add('192.168.0.2', r'192.168.0.3')
+    cm.add('192.168.0.3', r'192.168.0.1')
+    cm.add('192.168.0.4', r'192.168.0.1')
+
+    out_dirs = {}
+
+    for conn in group:
+        out_dirs[conn.host] = make_out_directory(conn,
+                                                 f'/groups/wall2-ilabt-iminds-be/react/data/{update_test_diff.__name__}',
+                                                 trial_dir=use)
+
+    print("starting Streams")
+    for conn in group:
+        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+
+    print("Starting REACT")
+    for conn in group:
+        if conn.host == 'zotacC2.wilab2.ilabt.iminds.be':
+            run_react(conn, out_dir=out_dirs[conn.host], tuner=use, claim=0.05)
+        else:
             run_react(conn, out_dir=out_dirs[conn.host], tuner=use)
 
     print("Collecting measurements")
@@ -444,12 +483,12 @@ def update_test(c, use):
 
 
 @task
-def update_test_qos(c, use):
+def update_test_qos(c, tuner):
     """Experiment for testing QoS functionality of react. """
     global HOSTS
     group = ThreadingGroup(*HOSTS)
 
-    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
+    assert (tuner == "dot" or tuner == "salt" or tuner == 'renew')
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -460,21 +499,19 @@ def update_test_qos(c, use):
     out_dirs = {}
 
     for conn in group:
-        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/update_test',
-                                                 trial_dir=use)
+        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/update_test_qos',
+                                                 trial_dir=tuner)
+
+    print("starting Streams")
+    for conn in group:
+        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
 
     print('starting REACT')
     for conn in group:
-        if use != 'oldest':
-            if conn.host == 'zotacD1':
-                run_react(conn, out_dirs[conn.host], use, capacity=0.5, qos=True)
-            else:
-                run_react(conn, out_dirs[conn.host], use)
-
-    print('Waiting for REACT to converge')
-    time.sleep(20)
-    for conn in group:
-        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+        if conn.host == 'zotacB3.wilab2.ilabt.iminds.be':
+            run_react(conn, out_dirs[conn.host], tuner, claim=0.5, qos=True)
+        else:
+            run_react(conn, out_dirs[conn.host], tuner)
 
     print("Collecting measurements")
 
@@ -489,7 +526,7 @@ def test_react(c, use):
     global HOSTS
     group = ThreadingGroup(*HOSTS)
 
-    assert (use == "dot" or use == "new" or use == "old" or use == 'oldest')
+    assert (use == "dot" or use == "salt" or use == "renew")
 
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
@@ -500,13 +537,12 @@ def test_react(c, use):
     out_dirs = {}
 
     for conn in group:
-        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/update_test',
+        out_dirs[conn.host] = make_out_directory(conn, '/groups/wall2-ilabt-iminds-be/react/data/test_react',
                                                  trial_dir=use)
 
     print('starting REACT')
     for conn in group:
-        if use != 'oldest':
-            run_react(conn, out_dirs[conn.host], use)
+        run_react(conn, out_dirs[conn.host], use)
 
     print('Waiting for REACT to converge')
     time.sleep(20)
