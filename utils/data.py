@@ -68,6 +68,7 @@ def plot_react_csv_data(node_dir, y_index):
 @cmd
 def plot_react(node_dir, col='airtime', ylim=1.0, save=None, title=None):
     # Example react.csv row
+    # timestamp, alloc, airtime, cw_prev, cw, cr
     # 1520532965.14935,0.16000,0.20536,352,356
 
     if col == 'alloc':
@@ -294,7 +295,7 @@ def net_graph(node_dir):
         plt.show()
 
 @cmd
-def find_paths(node_dir, length=4):
+def find_paths(node_dir, length=3):
     length = int(length)
 
     G100, Gall = get_graphs(node_dir)

@@ -5,3 +5,4 @@ venv/
 .idea/
 .DS_Store
 misc/
+node_info_files/

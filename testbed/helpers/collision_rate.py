@@ -5,7 +5,7 @@ import time
 
 from helpers.observer import Observer
 
-# TODO: somehow our setup casuses there to be three "wls33 stations"
+# TODO: somehow our setup causes there to be three "wls33 stations"
 # ...so return the largest collision rate because that's the real wls33
 
 def iw_station_dump(dev):

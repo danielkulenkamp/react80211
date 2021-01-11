@@ -4,6 +4,8 @@ import time
 import os
 import socket
 import struct
+import json
+import random
 
 import lsb_release_ex as lsb
 
@@ -16,6 +18,7 @@ from invoke import run
 from patchwork.files import exists
 
 from utils.conn_matrix import ConnMatrix
+from experiment_descriptors import dynamic_exps, complete_exps, line_exps, star_exps
 
 """
 For the fabric tasks, my convention here is to put the first argument as 'c'
@@ -28,18 +31,20 @@ You don't have to pass in a value for c, because the default value is None.
 
 # TODO: Fix it so it grabs the user's name, rather than using mine for all
 USERNAME = 'dkulenka'
-PROJECT_PATH = '/groups/wall2-ilabt-iminds-be/react/updating/react80211'
+PROJECT_PATH = '/groups/wall2-ilabt-iminds-be/react/react80211'
 HOSTS = []
 PYTHON_PATH = '/groups/wall2-ilabt-iminds-be/react/pyenv/versions/3.9.0/bin/python'
 
 HOSTS_DRIVER = []
 HOSTS_TX_POWER = []
+HOSTS_IPS = {}
 
 
 def set_hosts(host_file):
     global HOSTS
     global HOSTS_DRIVER
     global HOSTS_TX_POWER
+    global HOSTS_IPS
 
     hosts_info_file = open(host_file, 'r').readlines()
 
@@ -51,6 +56,9 @@ def set_hosts(host_file):
     HOSTS = [i.split(',')[0] for i in hosts_info]
     HOSTS_DRIVER = [i.split(',')[1].replace("\n", "") for i in hosts_info]
     HOSTS_TX_POWER = [i.split(',')[2].replace("\n", "") for i in hosts_info]
+    for host in HOSTS:
+        ip_index = HOSTS.index(host)
+        HOSTS_IPS[host] = f'192.168.0.{ip_index + 1}'
 
 # set nodes
 set_hosts('node_info.txt')
@@ -82,6 +90,7 @@ def network(c, frequency = 2412, interface = 'wls33',
     global HOSTS
     global HOSTS_DRIVER
     global HOSTS_TX_POWER
+    global HOSTS_IPS
 
     monitor_interface = 'mon0'
 
@@ -93,7 +102,8 @@ def network(c, frequency = 2412, interface = 'wls33',
         tx_power = HOSTS_TX_POWER[ip_index]
         print(HOSTS_TX_POWER)
 
-        ip_addr = f'192.168.0.{ip_index + 1}'
+        # ip_addr = f'192.168.0.{ip_index + 1}'
+        ip_addr = HOSTS_IPS[host]
         rate = 6
         essid = 'test'
 
@@ -153,33 +163,22 @@ def stop_react(conn):
 
 
 @task
-def run_react(conn, out_dir=None, tuner='salt', beta=0.6,
-              k = 500, claim = 0.80, pre_allocation=0, qos=False,
-              interface='wls33'):
+def run_react(conn, out_dir, tuner='salt', claim = 0.80, qos=False, filename=None, debug=False):
     """Starts react on the node connected to with the given conn parameter."""
     global PROJECT_PATH
     global PYTHON_PATH
 
-    # arguments = ['-i', interface, '-t', '0.1', '-r', '6000', '-b', str(beta), '-k', str(k)]
-    arguments = ['-t', '0.1']
+    arguments = [tuner, f'{out_dir}/react.csv', str(claim)]
+
+    if filename:
+        arguments.append('-e')
+        arguments.append(filename)
 
     if qos:
-        arguments.append('-q')
-        arguments.append('True')
+        arguments.append('--qos')
 
-    arguments.append('-c')
-    arguments.append(str(claim))
-
-    # Without a tuner REACT is disabled and we just collect airtime data
-    if tuner == 'salt' or tuner == 'renew':
-        arguments.append('-e')
-        arguments.append(tuner)
-
-    arguments.append('-o')
-    if out_dir is None:
-        # Don't use unique output directory (this case is just for testing)
-        out_dir = make_out_directory(conn, unique=False)
-    arguments.append(f'{out_dir}/react.csv')
+    if debug:
+        arguments.append('--debug')
 
     react_path = os.path.join(PROJECT_PATH, 'testbed')
 
@@ -268,6 +267,23 @@ def time_sync(c):
 
 
 @task
+def reboot(c):
+    """Reboots all nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run('sudo reboot')
+
+
+@task
+def start_test_screens(c):
+    """Starts screens for react, mgen, and tshark on all nodes"""
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run('screen -S mgen', pty=False)
+    group.run('screen -S react', pty=False)
+    group.run('screen -S tshark', pty=False)
+
+@task
 def yobooyathere(c):
     """A cheeky way to make sure you are connected to all the nodes. """
     global HOSTS
@@ -304,7 +320,7 @@ def screen_stop_all(c):
         sessions = result.stdout.strip().split()
 
         for name in sessions:
-            if name.split('.')[1] != 'running' and name.split('.')[1] != 'ptpd':
+            if name.split('.')[1] != 'running' and name.split('.')[1] != 'ptpd' and name.split('.')[1] != 'tshark':
                 screen_stop_session(conn, name)
 
 
@@ -320,33 +336,71 @@ def iperf_start_servers(c):
 
 
 @task
+def mgen_start_stream(conn, conn_matrix, exp_name=''):
+    filename = 'exp_script.mgen'
+    # for server in conn_matrix.links(get_my_ip(conn)):
+    server = conn_matrix.links(get_my_ip(conn))
+    file_contents = f'0.0 ON 1 UDP DST {server[0]}/4001 POISSON [6000 1024]\n300.0 OFF 1\n'
+    with open(filename, 'w') as f:
+        f.write(file_contents)
+    conn.put(filename)
+
+    cmd = f'mgen input {filename}'
+    screen_start_session(conn, 'mgen', cmd)
+
+
+@task
+def mgen_stop_all(c):
+    """Stops all mgen clients on all of the nodes. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        screen_stop_session(conn, 'mgen', interrupt=True)
+        screen_stop_session(conn, 'mgen_server', interrupt=True)
+
+
+@task
+def mgen_start_server(conn, host_out_dir):
+    cmd = f"mgen event 'listen udp 4001' output {host_out_dir}/{get_my_ip(conn)}-mgen-log.drc"
+    screen_start_session(conn, 'mgen_server', cmd)
+
+
+@task
 def iperf_start_clients(conn, host_out_dir, conn_matrix,
-                        tcp = False, rate = '50MMbps'):
+                        tcp = False):
     """Starts iperf clients on the nodes. It uses the passed ConnMatrix to determine which IP address to send to. """
-    for server in conn_matrix.links(get_my_ip(conn)):
-        cmd = 'iperf -c {}'.format(server)
-        if not tcp:
-            cmd += ' -u -b {}'.format(rate)
-        cmd += ' -t -1 -i 1 -yC'
+    # for server in conn_matrix.links(get_my_ip(conn)):
+    server = conn_matrix.links(get_my_ip(conn))
+    print(server)
+    print(f'conn.host: {conn.host}')
+    print(server)
+    cmd = 'iperf -c {}'.format(server[0])
+    if not tcp:
+        cmd += ' -u -b {}'.format(server[1])
+    cmd += ' -t -1 -i 1 -yC'
 
-        # Use -i (ignore signals) so that SIGINT propagted up pipe to iperf
-        cmd += ' | tee -i {}/{}.csv'.format(host_out_dir, server)
-
-        screen_start_session(conn, 'iperf_client', cmd)
+    # Use -i (ignore signals) so that SIGINT propagted up pipe to iperf
+    cmd += ' | tee -i {}/{}.csv'.format(host_out_dir, server[0])
+    print(f'cmd: {cmd}')
+    screen_start_session(conn, 'iperf_client', cmd)
 
 
 @task
 def iperf_test(c):
     """Tests iperf on one of the nodes. """
+    global USERNAME
     global HOSTS
     group = ThreadingGroup(*HOSTS)
 
     cm = ConnMatrix()
-    cm.add('192.168.0.1', '192.168.0.2')
-    cm.add('192.168.0.2', 'NONE')
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
 
     for conn in group:
-        iperf_start_clients(conn, "/users/{username}/", cm)
+        iperf_start_clients(conn, f"/users/{USERNAME}/", cm)
 
 
 @task
@@ -391,20 +445,96 @@ def make_out_directory(conn, out_dir = '/groups/wall2-ilabt-iminds-be/react/data
 
 
 @task
+def install_mgen(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run('sudo apt-get install mgen')
+
+
+@task
+def reset_netifaces(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+    group.run('sudo ifconfig wls33 down')
+    group.run('sudo ifconfig wls33 up')
+
+
+@task
+def setup_tc(c, iface='wls33', initial_rate='6mbit'):
+    global HOSTS
+
+    dst_nodes = [
+        '192.168.0.1',
+        '192.168.0.2',
+        '192.168.0.3',
+        '192.168.0.4',
+    ]
+
+    commands = [
+        f'sudo tc qdisc add dev {iface} root handle 1:0 htb default 30',
+        f'sudo tc class add dev {iface} parent 1:0 classid 1:1 htb rate {initial_rate}',
+    ]
+    for node in dst_nodes:
+        commands.append(
+            f'sudo tc filter add dev {iface} protocol all parent 1: u32 match ip dst {node} flowid 1:1'
+        )
+
+    for host in HOSTS:
+        for command in commands:
+            with Connection(host) as conn:
+                conn.run(command, warn=True)
+
+
+@task
 def setup(c):
     """Sets up all of the nodes. Includes time synchronization, creating the ad-hoc network,
     and starting iperf servers. """
     screen_stop_all(c)
     time_sync(c)
+    reset_netifaces(c)
     network(c, frequency = 5180)
+    setup_tc(c)
     iperf_start_servers(c)
+    install_mgen(c)
 
+
+@task
+def reset_shapers(c, iface='wls33', default_max=6):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    for conn in group:
+        conn.run(f'sudo tc class change dev {iface} parent 1:0 classid 1:1 htb rate {default_max}mbit')
 
 @task
 def stop_exp(c):
     """Stops experiment. Involves stopping all screen sessions and restarting iperf servers. """
     screen_stop_all(c)
     iperf_start_servers(c)
+    mgen_stop_all(c)
+    reset_shapers(c)
+
+
+@task
+def graph_test(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    out_dirs = {}
+    for conn in group:
+        out_dirs[conn.host] = make_out_directory(conn,
+                                                 f'/groups/wall2-ilabt-iminds-be/react/data/{graph_test.__name__}')
+
+    for conn in group:
+        nodes = [i for i in range(len(group))]
+        random.shuffle(nodes)
+        print(nodes)
+
+        cmd = 'ping -c 100 -I wls33 192.168.0.{0} > {1}/192.168.0.{0}'
+        for n in nodes:
+            conn.run(cmd.format(n+1, out_dirs[conn.host]), warn=True)
+
+
 
 
 @task
@@ -417,7 +547,7 @@ def update_test(c, use):
     cm = ConnMatrix()
     cm.add('192.168.0.1', r'192.168.0.2')
     cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.1')
+    cm.add('192.168.0.3', r'192.168.0.4')
     cm.add('192.168.0.4', r'192.168.0.1')
 
     out_dirs = {}
@@ -429,7 +559,8 @@ def update_test(c, use):
 
     print("starting Streams")
     for conn in group:
-        iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+        mgen_start_streams(conn, cm)
+        # iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
 
     print("Starting REACT")
     for conn in group:
@@ -441,6 +572,160 @@ def update_test(c, use):
 
     print('Stopping experiment')
     stop_exp(c)
+
+
+@task
+def variable_react_complete(c):
+    """Experiment for testing updates, with different claims. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
+
+    experiments = [
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 1.0,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 1.0,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 1.0,
+        # },
+        {
+            'zotacB2.wilab2.ilabt.iminds.be': 0.05,
+            'zotacB3.wilab2.ilabt.iminds.be': 0.2,
+            'zotacC2.wilab2.ilabt.iminds.be': 0.2,
+            'zotacC3.wilab2.ilabt.iminds.be': 1.0,
+        },
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 1.0,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 0.2,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 0.2,
+        # },
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 0.2,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 1.0,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 0.2,
+        # },
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 0.2,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 0.2,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 1.0,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 0.05,
+        # },
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 0.5,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 0.5,
+        # },
+        # {
+        #     'zotacC2.wilab2.ilabt.iminds.be': 0.15,
+        #     'zotacC3.wilab2.ilabt.iminds.be': 0.05,
+        #     'zotacB2.wilab2.ilabt.iminds.be': 0.75,
+        #     'zotacB3.wilab2.ilabt.iminds.be': 0.5,
+        # },
+    ]
+
+    i = 1
+    for exp in experiments:
+        for use in ['salt']:
+            out_dirs = {}
+            for conn in group:
+                out_dirs[conn.host] = \
+                    make_out_directory(
+                        conn,
+                        f'/groups/wall2-ilabt-iminds-be/react/data/test-{variable_react_complete.__name__}-{i}',
+                        trial_dir=use
+                    )
+
+            print('starting streams')
+            for conn in group:
+                iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+                # mgen_start_streams(conn, cm)
+
+            print('Starting REACT')
+
+            for conn in group:
+                run_react(conn, out_dir=out_dirs[conn.host], tuner=use, claim=exp[conn.host], debug=True)
+
+            print('Collecting Measurements')
+            time.sleep(120)
+            print('Stopping experiment')
+            stop_exp(c)
+        i += 1
+
+
+@task
+def variable_react_star(c):
+    """Experiment for testing variable REACT on a star topology. """
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.4')
+    cm.add('192.168.0.2', r'192.168.0.4')
+    cm.add('192.168.0.3', r'192.168.0.4')
+    cm.add('192.168.0.4', r'192.168.0.1')
+
+    experiments = [
+        {
+            'zotacJ6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacD6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacH1.wilab2.ilabt.iminds.be': 1.0,
+            'zotacG4.wilab2.ilabt.iminds.be': 1.0,
+        },
+        {
+            'zotacJ6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacD6.wilab2.ilabt.iminds.be': 0.5,
+            'zotacH1.wilab2.ilabt.iminds.be': 0.2,
+            'zotacG4.wilab2.ilabt.iminds.be': 0.1,
+        },
+        {
+            'zotacJ6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacD6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacH1.wilab2.ilabt.iminds.be': 0.3,
+            'zotacG4.wilab2.ilabt.iminds.be': 0.2,
+        },
+        {
+            'zotacJ6.wilab2.ilabt.iminds.be': 1.0,
+            'zotacD6.wilab2.ilabt.iminds.be': 0.4,
+            'zotacH1.wilab2.ilabt.iminds.be': 0.1,
+            'zotacG4.wilab2.ilabt.iminds.be': 0.1,
+        },
+
+    ]
+
+    i = 0
+    for exp in experiments:
+        for use in ['dot', 'salt']:
+            out_dirs = {}
+            for conn in group:
+                out_dirs[conn.host] = \
+                    make_out_directory(
+                        conn,
+                        f'/groups/wall2-ilabt-iminds-be/react/data/{variable_react_star.__name__}-{i}',
+                        trial_dir=use
+                    )
+
+            print('starting streams')
+            for conn in group:
+                iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+
+            print('Starting REACT')
+
+            for conn in group:
+                run_react(conn, out_dir=out_dirs[conn.host], tuner=use, claim=exp[conn.host])
+
+            print('Collecting Measurements')
+            time.sleep(120)
+            print('Stopping experiment')
+            stop_exp(c)
+        i += 1
 
 
 @task
@@ -491,10 +776,10 @@ def update_test_qos(c, tuner):
     assert (tuner == "dot" or tuner == "salt" or tuner == 'renew')
 
     cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
 
     out_dirs = {}
 
@@ -509,9 +794,9 @@ def update_test_qos(c, tuner):
     print('starting REACT')
     for conn in group:
         if conn.host == 'zotacB3.wilab2.ilabt.iminds.be':
-            run_react(conn, out_dirs[conn.host], tuner, claim=0.5, qos=True)
+            run_react(conn, out_dirs[conn.host], tuner, claim=0.5, qos=True, debug=True)
         else:
-            run_react(conn, out_dirs[conn.host], tuner)
+            run_react(conn, out_dirs[conn.host], tuner, debug=True)
 
     print("Collecting measurements")
 
@@ -529,10 +814,10 @@ def test_react(c, use):
     assert (use == "dot" or use == "salt" or use == "renew")
 
     cm = ConnMatrix()
-    cm.add('192.168.0.1', r'192.168.0.2')
-    cm.add('192.168.0.2', r'192.168.0.3')
-    cm.add('192.168.0.3', r'192.168.0.4')
-    cm.add('192.168.0.4', r'192.168.0.1')
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
 
     out_dirs = {}
 
@@ -542,10 +827,253 @@ def test_react(c, use):
 
     print('starting REACT')
     for conn in group:
-        run_react(conn, out_dirs[conn.host], use)
+        if conn.host == 'zotacB3.wilab2.ilabt.iminds.be':
+            run_react(conn, out_dirs[conn.host], use, claim=1.0)
+        elif conn.host == 'zotacF2.wilab2.ilabt.iminds.be':
+            run_react(conn, out_dirs[conn.host], use, claim=0.25)
+        else:
+            run_react(conn, out_dirs[conn.host], use, claim=0.25)
 
     print('Waiting for REACT to converge')
-    time.sleep(20)
+    time.sleep(120)
 
     print('Stopping Experiment')
     stop_exp(c)
+
+
+@task
+def dynamic_react_complete(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
+
+    for exp in dynamic_exps.experiments:
+        for use in ['salt']:
+            out_dirs = {}
+            for conn in group:
+                out_dirs[conn.host] = \
+                    make_out_directory(
+                        conn,
+                        f'/groups/wall2-ilabt-iminds-be/react/data/{dynamic_react_complete.__name__}-{exp["exp_name"]}',
+                        trial_dir=use
+                    )
+
+            for conn in group:
+                filename = f'{exp["exp_name"]}-{conn.host}.txt'
+                with open(filename, 'w') as f:
+                    json.dump(exp[conn.host], f)
+
+                conn.put(filename)
+
+            print('starting streams')
+            for conn in group:
+                iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+
+            print('starting REACT')
+            for conn in group:
+                filename = f'{exp["exp_name"]}-{conn.host}.txt'
+                run_react(conn, out_dirs[conn.host], tuner=use, claim=1.0, qos=False, filename=filename, debug=True)
+
+            print(f'running experiment {exp["exp_name"]}')
+            time.sleep(exp["duration"])
+
+            print(f'stopping experiment {exp["exp_name"]}')
+            stop_exp(c)
+
+
+@task
+def run_exps_complete(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.3', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.1', '6Mbps')
+
+    for exp in complete_exps.experiments:
+        out_dirs = {}
+        for conn in group:
+            out_dirs[conn.host] = \
+                make_out_directory(
+                    conn,
+                    f'/groups/wall2-ilabt-iminds-be/react/data/{run_exps_complete.__name__}-mgen-{exp["exp_name"]}',
+                    trial_dir=exp['tuner']
+                )
+
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            with open(filename, 'w') as f:
+                json.dump(exp[conn.host], f)
+
+            conn.put(filename)
+
+        print('starting servers')
+        for conn in group:
+            # iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+            mgen_start_server(conn, out_dirs[conn.host])
+
+        print('starting streams')
+        for conn in group:
+            mgen_start_stream(conn, cm)
+
+        print('starting REACT')
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            run_react(
+                conn,
+                out_dirs[conn.host],
+                tuner=exp['tuner'],
+                claim=1.0,
+                qos=False,
+                filename=filename,
+                debug=False)
+
+        print(f'running experiment {exp["exp_name"]}')
+        time.sleep(exp["duration"])
+
+        print(f'stopping experiment {exp["exp_name"]}')
+        stop_exp(c)
+
+
+@task
+def run_exps_line(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.1', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.4', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.3', '6Mbps')
+
+    for exp in line_exps.experiments:
+        out_dirs = {}
+        for conn in group:
+            out_dirs[conn.host] = \
+                make_out_directory(
+                    conn,
+                    f'/groups/wall2-ilabt-iminds-be/react/data/{run_exps_line.__name__}-mgen-{exp["exp_name"]}',
+                    trial_dir=exp['tuner']
+                )
+
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            with open(filename, 'w') as f:
+                json.dump(exp[conn.host], f)
+
+            conn.put(filename)
+
+        print('starting servers')
+        for conn in group:
+            # iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+            mgen_start_server(conn, out_dirs[conn.host])
+
+        print('starting streams')
+        for conn in group:
+            mgen_start_stream(conn, cm)
+
+        print('starting REACT')
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            run_react(
+                conn,
+                out_dirs[conn.host],
+                tuner=exp['tuner'],
+                claim=1.0,
+                qos=False,
+                filename=filename,
+                debug=False)
+
+        print(f'running experiment {exp["exp_name"]}')
+        time.sleep(exp["duration"])
+
+        print(f'stopping experiment {exp["exp_name"]}')
+        stop_exp(c)
+
+
+@task
+def run_exps_star(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.5', '6Mbps')
+    cm.add('192.168.0.2', r'192.168.0.5', '6Mbps')
+    cm.add('192.168.0.3', r'192.168.0.5', '6Mbps')
+    cm.add('192.168.0.4', r'192.168.0.5', '6Mbps')
+    cm.add('192.168.0.5', r'192.168.0.1', '6Mbps')
+
+    for exp in star_exps.experiments:
+        out_dirs = {}
+        for conn in group:
+            out_dirs[conn.host] = \
+                make_out_directory(
+                    conn,
+                    f'/groups/wall2-ilabt-iminds-be/react/data/{run_exps_star.__name__}-{exp["exp_name"]}',
+                    trial_dir=exp['tuner']
+                )
+
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            with open(filename, 'w') as f:
+                json.dump(exp[conn.host], f)
+
+            conn.put(filename)
+
+        print('starting streams')
+        for conn in group:
+            iperf_start_clients(conn, out_dirs[conn.host], cm, tcp=False)
+
+        print('starting REACT')
+        for conn in group:
+            filename = f'{exp["exp_name"]}-{conn.host}.txt'
+            run_react(
+                conn,
+                out_dirs[conn.host],
+                tuner=exp['tuner'],
+                claim=1.0,
+                qos=False,
+                filename=filename,
+                debug=False)
+
+        print(f'running experiment {exp["exp_name"]}')
+        time.sleep(exp["duration"])
+
+        print(f'stopping experiment {exp["exp_name"]}')
+        stop_exp(c)
+
+
+@task
+def mgen_test(c):
+    global HOSTS
+    group = ThreadingGroup(*HOSTS)
+
+    out_dirs = {}
+    for conn in group:
+        out_dirs[conn.host] = \
+            make_out_directory(
+                conn,
+                f'/groups/wall2-ilabt-iminds-be/react/data/{mgen_test.__name__}-test',
+                trial_dir='salt'
+            )
+
+    for conn in group:
+        mgen_start_server(conn, out_dirs[conn.host])
+
+    cm = ConnMatrix()
+    cm.add('192.168.0.1', r'192.168.0.2', '6M')
+    cm.add('192.168.0.2', r'192.168.0.3', '6M')
+    cm.add('192.168.0.3', r'192.168.0.4', '6M')
+    cm.add('192.168.0.4', r'192.168.0.1', '6M')
+
+    for conn in group:
+        mgen_start_stream(conn, cm)
+
+

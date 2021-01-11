@@ -72,6 +72,7 @@ if __name__ == '__main__':
     p.add_argument('-o', '--once', action='store_true',
             help="measure airtime once and exit")
 
+
     args = p.parse_args()
 
     ao = AirtimeObserver(args.dev)
